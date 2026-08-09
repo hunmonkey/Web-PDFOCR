@@ -1,0 +1,33 @@
+# --- 파이썬 ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- 가상환경 ---
+.venv/
+venv/
+env/
+
+# --- 작업 파일 (대용량 PDF가 저장소에 올라가지 않도록) ---
+uploads/
+outputs/
+*.pdf
+*.PDF
+
+# --- OCR 모델 캐시 (내려받은 onnx 모델, 수십~수백 MB) ---
+models/
+*.onnx
+
+# --- 검증 스크립트가 만드는 임시 이미지 ---
+scripts/_gpu_test.png
+
+# --- 비밀정보 (절대 커밋 금지) ---
+Rule_PW.txt
+.env
+
+# --- 편집기 / OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

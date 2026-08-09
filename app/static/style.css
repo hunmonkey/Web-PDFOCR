@@ -1,0 +1,436 @@
+/* =========================================================================
+   PDFOCR 화면 스타일
+   색상은 이 파일 맨 위 토큰에서만 정한다. 아래에서는 색상 값을 직접 적지 않는다.
+   ========================================================================= */
+
+:root {
+    /* 1. 바탕색 */
+    --pdfocr-bg: #f6f7f9;
+    --pdfocr-surface: #ffffff;
+    --pdfocr-surface-sub: #f0f2f5;
+
+    /* 2. 글자색과 선색 */
+    --pdfocr-text: #1c1f23;
+    --pdfocr-text-muted: #5b636d;
+    --pdfocr-border: #dfe3e8;
+
+    /* 3. 핵심 액션색 (시작, 내려받기) */
+    --pdfocr-accent: #1f6feb;
+    --pdfocr-accent-hover: #1a5fd0;
+    --pdfocr-accent-text: #ffffff;
+
+    /* 4. 상태색 */
+    --pdfocr-ok: #1a7f45;
+    --pdfocr-ok-bg: #e6f4ec;
+    --pdfocr-warn: #96690a;
+    --pdfocr-warn-bg: #fbf1dc;
+    --pdfocr-danger: #b3261e;
+    --pdfocr-danger-bg: #fbeae9;
+    --pdfocr-neutral: #5b636d;
+    --pdfocr-neutral-bg: #eceef1;
+
+    /* 모서리 둥글기는 세 값만 쓴다 */
+    --pdfocr-radius-sm: 6px;
+    --pdfocr-radius-md: 10px;
+    --pdfocr-radius-lg: 16px;
+
+    /* 그림자는 얕고 넓게 한 종류만 */
+    --pdfocr-shadow: 0 1px 3px rgba(16, 22, 30, 0.06), 0 8px 24px rgba(16, 22, 30, 0.05);
+
+    --pdfocr-motion: 180ms ease;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --pdfocr-bg: #15181c;
+        --pdfocr-surface: #1e2227;
+        --pdfocr-surface-sub: #262b31;
+
+        --pdfocr-text: #e9ecef;
+        --pdfocr-text-muted: #a2abb5;
+        --pdfocr-border: #333940;
+
+        --pdfocr-accent: #4b8ef7;
+        --pdfocr-accent-hover: #6ba1f9;
+        --pdfocr-accent-text: #0d1117;
+
+        --pdfocr-ok: #5cc98d;
+        --pdfocr-ok-bg: #1b2f24;
+        --pdfocr-warn: #e0b355;
+        --pdfocr-warn-bg: #332a17;
+        --pdfocr-danger: #f08b84;
+        --pdfocr-danger-bg: #3a201e;
+        --pdfocr-neutral: #a2abb5;
+        --pdfocr-neutral-bg: #2b3037;
+
+        --pdfocr-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 32px 20px 64px;
+    background: var(--pdfocr-bg);
+    color: var(--pdfocr-text);
+    font-family: "Malgun Gothic", "맑은 고딕", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.page {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+/* ── 머리말 ───────────────────────────────────────────────────────────── */
+.page-head {
+    margin-bottom: 28px;
+}
+
+.page-head h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.page-head p {
+    margin: 0;
+    color: var(--pdfocr-text-muted);
+}
+
+/* ── 카드 ─────────────────────────────────────────────────────────────── */
+.card {
+    background: var(--pdfocr-surface);
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-lg);
+    box-shadow: var(--pdfocr-shadow);
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.card h2 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.card-hint {
+    margin: 0 0 18px;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+}
+
+/* ── 파일 올리는 자리 ─────────────────────────────────────────────────── */
+.dropzone {
+    display: block;
+    width: 100%;
+    padding: 36px 20px;
+    border: 1.5px dashed var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-md);
+    background: var(--pdfocr-surface-sub);
+    color: var(--pdfocr-text-muted);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--pdfocr-motion);
+}
+
+.dropzone:hover,
+.dropzone.is-over {
+    border-color: var(--pdfocr-accent);
+}
+
+.dropzone:focus-visible {
+    outline: 2px solid var(--pdfocr-accent);
+    outline-offset: 2px;
+}
+
+.dropzone strong {
+    display: block;
+    color: var(--pdfocr-text);
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+
+.picked-file {
+    display: none;
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--pdfocr-surface-sub);
+    border-radius: var(--pdfocr-radius-sm);
+    font-size: 14px;
+    word-break: break-all;
+}
+
+.picked-file.is-shown {
+    display: block;
+}
+
+/* ── 설정 ─────────────────────────────────────────────────────────────── */
+.field {
+    margin-bottom: 22px;
+}
+
+.field:last-child {
+    margin-bottom: 0;
+}
+
+.field > label,
+.field > .field-title {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+.field-desc {
+    margin: 0 0 10px;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+}
+
+select,
+input[type="number"] {
+    width: 100%;
+    max-width: 320px;
+    padding: 9px 12px;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-sm);
+    background: var(--pdfocr-surface);
+    color: var(--pdfocr-text);
+    font-family: inherit;
+    font-size: 14px;
+}
+
+select:focus-visible,
+input:focus-visible {
+    outline: 2px solid var(--pdfocr-accent);
+    outline-offset: 1px;
+}
+
+.choice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-sm);
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.choice:last-child {
+    margin-bottom: 0;
+}
+
+.choice:hover {
+    border-color: var(--pdfocr-accent);
+}
+
+.choice input {
+    margin: 4px 0 0;
+    flex-shrink: 0;
+}
+
+.choice-text strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.choice-text span {
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+}
+
+/* ── 단추 ─────────────────────────────────────────────────────────────── */
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+button {
+    padding: 10px 20px;
+    border-radius: var(--pdfocr-radius-sm);
+    border: 1px solid transparent;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--pdfocr-motion);
+}
+
+button:focus-visible {
+    outline: 2px solid var(--pdfocr-accent);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.button-main {
+    background: var(--pdfocr-accent);
+    color: var(--pdfocr-accent-text);
+}
+
+.button-main:hover:not(:disabled) {
+    background: var(--pdfocr-accent-hover);
+}
+
+.button-sub {
+    background: var(--pdfocr-surface);
+    color: var(--pdfocr-text);
+    border-color: var(--pdfocr-border);
+}
+
+.button-sub:hover:not(:disabled) {
+    background: var(--pdfocr-surface-sub);
+}
+
+/* ── 상태 배지 ────────────────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-waiting,
+.badge-canceled {
+    background: var(--pdfocr-neutral-bg);
+    color: var(--pdfocr-neutral);
+}
+
+.badge-running {
+    background: var(--pdfocr-surface-sub);
+    color: var(--pdfocr-accent);
+}
+
+.badge-done {
+    background: var(--pdfocr-ok-bg);
+    color: var(--pdfocr-ok);
+}
+
+.badge-failed {
+    background: var(--pdfocr-danger-bg);
+    color: var(--pdfocr-danger);
+}
+
+/* ── 진행 상황 ────────────────────────────────────────────────────────── */
+.progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.progress-percent {
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+    height: 8px;
+    background: var(--pdfocr-surface-sub);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--pdfocr-accent);
+    border-radius: 999px;
+    transition: width var(--pdfocr-motion);
+}
+
+.progress-message {
+    margin: 12px 0 0;
+    color: var(--pdfocr-text-muted);
+    font-size: 14px;
+}
+
+/* ── 결과 ─────────────────────────────────────────────────────────────── */
+.result-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 4px 0 20px;
+}
+
+.result-item {
+    padding: 14px;
+    background: var(--pdfocr-surface-sub);
+    border-radius: var(--pdfocr-radius-sm);
+}
+
+.result-item dt {
+    margin: 0 0 4px;
+    color: var(--pdfocr-text-muted);
+    font-size: 12px;
+}
+
+.result-item dd {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.result-item .sub {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--pdfocr-text-muted);
+}
+
+/* ── 알림 ─────────────────────────────────────────────────────────────── */
+.notice {
+    padding: 12px 14px;
+    border-radius: var(--pdfocr-radius-sm);
+    font-size: 14px;
+    margin-top: 14px;
+}
+
+.notice-error {
+    background: var(--pdfocr-danger-bg);
+    color: var(--pdfocr-danger);
+}
+
+.notice-plain {
+    background: var(--pdfocr-surface-sub);
+    color: var(--pdfocr-text-muted);
+}
+
+.is-hidden {
+    display: none;
+}
+
+/* 움직임을 꺼 둔 사용자에게는 애니메이션을 쓰지 않는다 */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+    }
+}
+
+/* 좁은 화면 */
+@media (max-width: 420px) {
+    body {
+        padding: 20px 14px 48px;
+    }
+
+    .card {
+        padding: 18px;
+    }
+}

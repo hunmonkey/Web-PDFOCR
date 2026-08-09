@@ -1,0 +1,25 @@
+# PDFOCR 실행에 필요한 패키지 목록
+#
+# 버전을 정확히 고정한 이유:
+#   onnxruntime-gpu는 버전에 따라 요구하는 CUDA 세대가 달라진다.
+#   1.26.0 이하 = CUDA 12 계열 / 1.27.0 이상 = CUDA 13 계열.
+#   CUDA 13은 그래픽 드라이버 580 이상을 요구해서 구형 PC에서 GPU를 못 잡을 수 있다.
+#   RTX 3050 PC와 RTX 5070 Ti PC 양쪽에서 같은 설정으로 쓰기 위해
+#   요구 조건이 낮은 CUDA 12 계열(1.26.0)로 고정한다.
+#
+# [cuda,cudnn] 표기는 CUDA/cuDNN 라이브러리까지 pip으로 함께 받는다는 뜻이다.
+# 이 덕분에 NVIDIA CUDA 툴킷을 따로 설치하지 않아도 된다. (약 1.5GB)
+
+# --- 웹 서버 ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+jinja2==3.1.6
+python-multipart==0.0.32
+
+# --- PDF 처리 ---
+PyMuPDF==1.28.2
+Pillow==12.3.0
+
+# --- OCR 엔진 (GPU 가속) ---
+rapidocr==3.9.2
+onnxruntime-gpu[cuda,cudnn]==1.26.0

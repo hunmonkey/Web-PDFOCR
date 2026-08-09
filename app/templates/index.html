@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDFOCR - 검색 가능한 PDF 만들기</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="page">
+
+    <header class="page-head">
+        <h1>검색 가능한 PDF 만들기</h1>
+        <p>스캔한 PDF에서 한글과 영문을 읽어, 글자를 찾을 수 있는 PDF로 바꿉니다.</p>
+    </header>
+
+    <!-- 1. 파일 고르기 ------------------------------------------------------->
+    <section class="card">
+        <h2>1. 파일 고르기</h2>
+        <p class="card-hint">스캔한 PDF 파일 하나를 올려 주세요.</p>
+
+        <label class="dropzone" id="dropzone" tabindex="0">
+            <strong>여기로 PDF를 끌어다 놓으세요</strong>
+            누르면 파일을 직접 고를 수도 있습니다
+            <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
+        </label>
+
+        <div class="picked-file" id="picked-file"></div>
+    </section>
+
+    <!-- 2. 설정 -------------------------------------------------------------->
+    <section class="card">
+        <h2>2. 설정</h2>
+        <p class="card-hint">잘 모르겠다면 그대로 두셔도 됩니다.</p>
+
+        <div class="field">
+            <label for="dpi">읽어 들일 해상도</label>
+            <p class="field-desc">숫자가 클수록 작은 글씨까지 잘 읽지만 더 오래 걸립니다.</p>
+            <select id="dpi">
+                <option value="150">150 - 빠름 (글씨가 큰 문서)</option>
+                <option value="200">200 - 보통</option>
+                <option value="300" selected>300 - 권장 (기본값)</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="text-score">글자로 인정할 기준 점수</label>
+            <p class="field-desc">
+                이 점수보다 자신 없게 읽은 글자는 버립니다.
+                낮추면 더 많이 담지만 틀린 글자가 섞일 수 있습니다. (0 ~ 1)
+            </p>
+            <input type="number" id="text-score" value="0.5" min="0" max="1" step="0.05" />
+        </div>
+
+        <div class="field">
+            <span class="field-title">변환 방식</span>
+            <p class="field-desc">결과 PDF를 어떻게 만들지 고릅니다.</p>
+
+            <label class="choice">
+                <input type="radio" name="mode" value="keep" checked />
+                <span class="choice-text">
+                    <strong>원본 그대로 두기 (권장)</strong>
+                    <span>보이는 모습은 그대로 두고, 눈에 안 보이는 글자만 얹습니다.
+                          화질이 전혀 나빠지지 않습니다.</span>
+                </span>
+            </label>
+
+            <label class="choice">
+                <input type="radio" name="mode" value="rebuild" />
+                <span class="choice-text">
+                    <strong>용량 줄이기</strong>
+                    <span>위에서 고른 해상도로 페이지를 다시 만듭니다.
+                          원본이 아주 고화질일 때 용량이 줄어듭니다.
+                          반대로 원본보다 높은 해상도를 고르면 오히려 커집니다.</span>
+                </span>
+            </label>
+        </div>
+    </section>
+
+    <!-- 3. 변환 -------------------------------------------------------------->
+    <section class="card">
+        <h2>3. 변환</h2>
+        <p class="card-hint" id="ready-hint">파일을 고르면 시작할 수 있습니다.</p>
+
+        <div class="button-row">
+            <button type="button" class="button-main" id="start-button" disabled>변환 시작</button>
+            <button type="button" class="button-sub is-hidden" id="stop-button">중지</button>
+            <span class="badge badge-waiting is-hidden" id="status-badge">대기</span>
+        </div>
+
+        <div class="notice notice-error is-hidden" id="error-box" role="alert"></div>
+    </section>
+
+    <!-- 4. 진행 상황 ---------------------------------------------------------->
+    <section class="card is-hidden" id="progress-card" aria-live="polite">
+        <h2>진행 상황</h2>
+        <div class="progress-head">
+            <span class="progress-percent" id="progress-percent">0%</span>
+            <span class="badge badge-running" id="progress-badge">실행 중</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <p class="progress-message" id="progress-message">준비하는 중입니다.</p>
+    </section>
+
+    <!-- 5. 결과 --------------------------------------------------------------->
+    <section class="card is-hidden" id="result-card">
+        <h2>변환 결과</h2>
+        <p class="card-hint" id="result-hint"></p>
+
+        <dl class="result-grid" id="result-grid"></dl>
+
+        <div class="button-row">
+            <button type="button" class="button-main" id="download-button">결과 파일 내려받기</button>
+            <button type="button" class="button-sub" id="reset-button">다른 파일 변환하기</button>
+        </div>
+    </section>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
