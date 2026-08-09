@@ -323,6 +323,11 @@ input:focus-visible {
     outline-offset: 1px;
 }
 
+select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .choice {
     display: flex;
     gap: 10px;
@@ -342,9 +347,22 @@ input:focus-visible {
     border-color: var(--pdfocr-accent);
 }
 
+.choice.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.choice.is-disabled:hover {
+    border-color: var(--pdfocr-border);
+}
+
 .choice input {
     margin: 4px 0 0;
     flex-shrink: 0;
+}
+
+.choice-text {
+    min-width: 0;
 }
 
 .choice-text strong {
@@ -356,6 +374,10 @@ input:focus-visible {
 .choice-text span {
     color: var(--pdfocr-text-muted);
     font-size: 13px;
+}
+
+.processor-note {
+    margin: 10px 0 0;
 }
 
 /* ── 단추 ─────────────────────────────────────────────────────────────── */
@@ -543,5 +565,9 @@ button:disabled {
 
     .card {
         padding: 18px;
+    }
+
+    .choice {
+        padding: 11px 12px;
     }
 }

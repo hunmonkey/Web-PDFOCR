@@ -20,6 +20,20 @@
 #   docker-compose.yml 의 그래픽카드 항목을 되살리면 된다.
 # =============================================================================
 
+# 브라우저 OCR 소스는 Node.js로 한 번 묶은 뒤 결과 파일만 운영 이미지에 넣는다.
+# 운영 중에는 Node.js가 필요하지 않으므로 최종 이미지 크기에는 영향을 주지 않는다.
+FROM node:24-bookworm-slim AS browser-build
+
+WORKDIR /browser
+
+# 잠금 파일에 기록된 정확한 버전만 설치해 언제 다시 만들어도 같은 결과가 나오게 한다.
+COPY browser/package.json browser/package-lock.json ./
+RUN npm ci
+
+COPY browser/build.mjs ./
+RUN npm run build
+
+
 FROM python:3.12-slim
 
 # 파이썬이 로그를 바로 내보내게 한다. (도커 로그에서 진행 상황을 보기 위해)
@@ -49,13 +63,29 @@ RUN pip install --upgrade pip \
 COPY app ./app
 COPY scripts ./scripts
 
-# 브라우저가 그래픽카드로 계산할 때 쓰는 라이브러리를 받아 둔다.
-# 용량이 커서(25MB 남짓) 저장소에 넣지 않고 여기서 받는다.
-ARG ORT_WEB_VERSION=1.27.0
-RUN mkdir -p app/static/vendor && cd app/static/vendor && \
-    for f in ort.webgpu.bundle.min.mjs ort-wasm-simd-threaded.jsep.wasm ort-wasm-simd-threaded.jsep.mjs; do \
-        curl -fsSL -o "$f" "https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_WEB_VERSION}/dist/$f"; \
-    done && ls -lh
+# 위 단계에서 만든 공식 PaddleOCR.js 브라우저 묶음만 가져온다.
+COPY --from=browser-build /browser/dist/paddleocr-browser.mjs ./app/static/vendor/paddleocr-browser.mjs
+
+# 브라우저가 그래픽카드로 계산할 때 쓰는 실행 파일과 OCR 모델을 받아 둔다.
+# gpu-test는 Asyncify를, PaddleOCR.js 묶음은 JSEP를 요구하므로 두 쌍을 모두 보관한다.
+# 모델은 받은 뒤 SHA-256 지문을 대조해 전송 중 망가진 파일이 이미지에 들어가지 않게 한다.
+RUN set -eu; \
+    cd app/static/vendor; \
+    for f in \
+        ort.webgpu.bundle.min.mjs \
+        ort-wasm-simd-threaded.asyncify.mjs \
+        ort-wasm-simd-threaded.asyncify.wasm \
+        ort-wasm-simd-threaded.jsep.mjs \
+        ort-wasm-simd-threaded.jsep.wasm; do \
+        curl -fsSL -o "$f" "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/$f"; \
+    done; \
+    curl -fsSL -o PP-OCRv6_small_det_onnx_infer.tar \
+        "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_small_det_onnx_infer.tar"; \
+    curl -fsSL -o korean_PP-OCRv5_mobile_rec_onnx_infer.tar \
+        "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/korean_PP-OCRv5_mobile_rec_onnx_infer.tar"; \
+    echo "D218F6FBF0F1C23D2161BD6AC7F5EAA6104FA89955C09290497E31008E2618E4  PP-OCRv6_small_det_onnx_infer.tar" | sha256sum -c -; \
+    echo "568ED8B43A260ADC9F484D92105E425EA8CDDF8CE16940C177BC12864CFB0EB0  korean_PP-OCRv5_mobile_rec_onnx_infer.tar" | sha256sum -c -; \
+    ls -lh
 
 # 글자 인식 모델을 미리 받아 둔다.
 # 이 단계를 빼면 첫 변환 때 인터넷에서 받느라 한참 기다리게 되고,

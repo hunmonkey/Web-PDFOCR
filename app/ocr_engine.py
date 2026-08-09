@@ -23,7 +23,7 @@ import sysconfig
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +77,7 @@ from app.system_check import (  # noqa: E402
 # ─────────────────────────────────────────────────────────────────────────────
 MODE_KEEP = "keep"        # 원본 페이지를 그대로 두고 투명 글자만 얹는다
 MODE_REBUILD = "rebuild"  # 선택한 DPI 이미지로 페이지를 다시 만든다 (용량 축소)
+BACKEND_WEBGPU = "WebGPU"  # 접속한 브라우저의 그래픽카드로 글자를 읽는다
 
 # PyMuPDF에 내장된 한국어 글꼴. 글꼴 파일을 PDF에 넣지 않아도 한글이 검색된다.
 # (맑은 고딕을 넣으면 파일 하나당 7MB 넘게 늘어나므로 쓰지 않는다.)
@@ -113,6 +114,32 @@ class OcrSummary:
     output_bytes: int = 0
     device: str = BACKEND_CPU    # 실제로 사용한 장치 (CUDA / DirectML / CPU)
     stopped: bool = False        # 사용자가 중지했는지
+
+
+@dataclass(frozen=True)
+class BrowserOcrLine:
+    """브라우저가 한 글줄에서 읽은 내용과 네 꼭짓점."""
+    box: tuple[tuple[float, float], ...]
+    text: str
+    score: float
+
+
+@dataclass(frozen=True)
+class BrowserOcrPage:
+    """브라우저가 한 페이지를 모두 읽은 결과."""
+    render_width: int
+    render_height: int
+    rotation: int
+    lines: tuple[BrowserOcrLine, ...]
+
+
+@dataclass(frozen=True)
+class BrowserPageImage:
+    """브라우저 OCR에 건네는 한 페이지 PNG와 그 좌표 기준."""
+    content: bytes
+    width: int
+    height: int
+    rotation: int
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,9 +290,11 @@ def _insert_invisible_text(page, box, text: str, scale: float, rotate: int) -> N
     ys = [float(point[1]) / scale for point in box]
     rect = pymupdf.Rect(min(xs), min(ys), max(xs), max(ys))
 
-    # 페이지가 돌아가 있는 문서라면, 돌리기 전 좌표로 되돌려 놓아야 위치가 맞는다.
-    if rotate:
-        rect = rect * page.derotation_matrix
+    _insert_invisible_text_rect(page, rect, text, rotate)
+
+
+def _insert_invisible_text_rect(page, rect, text: str, rotate: int) -> None:
+    """화면에서 보이는 방향의 글상자 안에 투명 글자를 넣는다."""
 
     if rect.height <= 0 or rect.width <= 0:
         return
@@ -278,6 +307,11 @@ def _insert_invisible_text(page, box, text: str, scale: float, rotate: int) -> N
 
     # 글자를 놓는 기준점은 글상자의 아래쪽 선이다. 살짝 띄워야 자연스럽다.
     origin = pymupdf.Point(rect.x0, rect.y1 - rect.height * 0.15)
+    # insert_text는 회전하기 전 페이지 좌표를 받는다. 글상자 전체를 먼저 되돌리면
+    # 90도 문서에서 너비와 높이가 뒤바뀌므로, 글자 크기는 화면 방향에서 계산하고
+    # 실제로 놓을 기준점 하나만 되돌린다.
+    if rotate:
+        origin = origin * page.derotation_matrix
 
     page.insert_text(
         origin,
@@ -379,6 +413,124 @@ def run_ocr(
     finally:
         if rebuild:
             target.close()
+        source.close()
+        gc.collect()
+
+    summary.elapsed = time.perf_counter() - started
+    return summary
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 브라우저 OCR용 페이지와 결과 PDF
+# ─────────────────────────────────────────────────────────────────────────────
+def render_browser_page(
+    input_path: str | Path,
+    page_index: int,
+    max_side: int = 2000,
+) -> BrowserPageImage:
+    """PDF 한 쪽을 브라우저 OCR에 맞는 PNG로 그린다.
+
+    페이지 비율은 그대로 두고 가장 긴 변만 max_side 이하로 맞춘다. 브라우저가
+    돌려준 좌표는 이 PNG의 width/height를 기준으로 다시 PDF 좌표로 바꾼다.
+    """
+    if max_side < 2:
+        raise ValueError("페이지 이미지 크기는 2 이상이어야 합니다.")
+
+    with pymupdf.open(str(input_path)) as source:
+        if page_index < 0 or page_index >= source.page_count:
+            raise IndexError("PDF 쪽 번호가 범위를 벗어났습니다.")
+
+        page = source[page_index]
+        longest = max(page.rect.width, page.rect.height)
+        if longest <= 0:
+            raise ValueError("크기가 올바르지 않은 PDF 쪽입니다.")
+
+        scale = max_side / longest
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+
+        # 소수점 반올림 때문에 드물게 한 픽셀 커질 수 있으므로 한 번 더 맞춘다.
+        rendered_longest = max(pix.width, pix.height)
+        if rendered_longest > max_side:
+            scale *= (max_side - 1) / rendered_longest
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+
+        return BrowserPageImage(
+            content=pix.tobytes("png"),
+            width=pix.width,
+            height=pix.height,
+            rotation=page.rotation,
+        )
+
+
+def build_pdf_from_browser_results(
+    input_path: str | Path,
+    output_path: str | Path,
+    options: OcrOptions,
+    pages: Mapping[int, BrowserOcrPage],
+    on_progress: Optional[Callable[[int, int], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> OcrSummary:
+    """브라우저가 읽은 글자를 원본 PDF에 투명하게 얹는다.
+
+    브라우저 결과의 가로·세로 비율을 따로 계산한다. 페이지 렌더링과 OCR 모델
+    내부에서 생기는 한두 픽셀의 반올림 차이가 글자 위치에 쌓이지 않게 하기 위해서다.
+    """
+    if options.mode != MODE_KEEP:
+        raise ValueError("브라우저 결과 조립은 원본 유지 방식만 지원합니다.")
+
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    started = time.perf_counter()
+    summary = OcrSummary(device=BACKEND_WEBGPU, input_bytes=input_path.stat().st_size)
+    source = pymupdf.open(input_path)
+
+    try:
+        summary.total_pages = source.page_count
+        expected_pages = set(range(source.page_count))
+        if set(pages) != expected_pages:
+            raise ValueError("모든 PDF 쪽의 인식 결과가 필요합니다.")
+
+        for index in range(source.page_count):
+            if should_stop is not None and should_stop():
+                summary.stopped = True
+                break
+
+            page = source[index]
+            result = pages[index]
+            if result.render_width <= 0 or result.render_height <= 0:
+                raise ValueError("브라우저 페이지 이미지 크기가 올바르지 않습니다.")
+            if result.rotation != page.rotation:
+                raise ValueError("브라우저 페이지 회전값이 원본 PDF와 다릅니다.")
+
+            scale_x = page.rect.width / result.render_width
+            scale_y = page.rect.height / result.render_height
+
+            for line in result.lines:
+                if line.score < options.text_score or not line.text.strip():
+                    continue
+
+                xs = [page.rect.x0 + point[0] * scale_x for point in line.box]
+                ys = [page.rect.y0 + point[1] * scale_y for point in line.box]
+                rect = pymupdf.Rect(min(xs), min(ys), max(xs), max(ys))
+                _insert_invisible_text_rect(page, rect, line.text, page.rotation)
+                summary.text_lines += 1
+
+            summary.done_pages = index + 1
+            if on_progress is not None:
+                on_progress(summary.done_pages, summary.total_pages)
+
+            if summary.done_pages % GC_INTERVAL == 0:
+                gc.collect()
+
+        # 마지막 쪽 처리 직후 들어온 중지 요청도 저장을 시작하기 전에 한 번 더 본다.
+        if not summary.stopped and should_stop is not None and should_stop():
+            summary.stopped = True
+
+        if not summary.stopped:
+            source.save(str(output_path), garbage=4, deflate=True)
+            summary.output_bytes = output_path.stat().st_size
+
+    finally:
         source.close()
         gc.collect()
 

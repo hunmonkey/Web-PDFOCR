@@ -24,24 +24,26 @@
 
         <div class="tabs" role="tablist">
             <button type="button" class="tab is-active" id="tab-upload-button"
-                    role="tab" aria-selected="true" aria-controls="tab-upload">
+                    role="tab" aria-selected="true" aria-controls="tab-upload" tabindex="0">
                 내 컴퓨터에서 올리기
             </button>
             <button type="button" class="tab" id="tab-storage-button"
-                    role="tab" aria-selected="false" aria-controls="tab-storage">
+                    role="tab" aria-selected="false" aria-controls="tab-storage" tabindex="-1">
                 서버 보관함에서 고르기
             </button>
         </div>
 
-        <div id="tab-upload" role="tabpanel">
-            <label class="dropzone" id="dropzone" tabindex="0">
+        <div id="tab-upload" role="tabpanel" aria-labelledby="tab-upload-button">
+            <label class="dropzone" id="dropzone" tabindex="0" role="button"
+                   aria-label="내 컴퓨터에서 PDF 파일 선택" aria-controls="file-input">
                 <strong>여기로 PDF를 끌어다 놓으세요</strong>
                 누르면 파일을 직접 고를 수도 있습니다
                 <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
             </label>
         </div>
 
-        <div id="tab-storage" class="is-hidden" role="tabpanel">
+        <div id="tab-storage" class="is-hidden" role="tabpanel"
+             aria-labelledby="tab-storage-button">
             <p class="card-hint" id="storage-hint">보관함을 불러오는 중입니다.</p>
             <div class="storage-list" id="storage-list"></div>
             <div class="button-row">
@@ -58,8 +60,42 @@
         <p class="card-hint">잘 모르겠다면 그대로 두셔도 됩니다.</p>
 
         <div class="field">
+            <span class="field-title" id="processor-title">글자를 읽을 곳</span>
+            <p class="field-desc">PDF에서 글자를 찾는 계산을 어디에서 할지 고릅니다.</p>
+
+            <div role="radiogroup" aria-labelledby="processor-title">
+                <label class="choice">
+                    <input type="radio" name="processor" id="processor-server"
+                           value="server" checked />
+                    <span class="choice-text">
+                        <strong>서버에서 읽기 (기본값)</strong>
+                        <span>지금까지 사용하던 안정적인 방식입니다.</span>
+                    </span>
+                </label>
+
+                <label class="choice is-disabled" id="processor-browser-choice">
+                    <input type="radio" name="processor" id="processor-browser"
+                           value="browser" aria-describedby="browser-processor-hint" disabled />
+                    <span class="choice-text">
+                        <strong>이 컴퓨터의 그래픽카드 (시험 기능)</strong>
+                        <span>
+                            처음 한 번은 약 60MB를 받습니다. 작업이 끝날 때까지 이 탭을 열어 두세요.
+                            글자를 읽는 계산만 이 컴퓨터가 맡고, 원본과 결과는 서버로 전달됩니다.
+                            현재는 ‘원본 그대로 두기’ 방식만 지원합니다.
+                        </span>
+                    </span>
+                </label>
+            </div>
+
+            <p class="notice notice-plain processor-note" id="browser-processor-hint"
+               aria-live="polite">그래픽카드 사용 가능 여부를 확인하는 중입니다.</p>
+        </div>
+
+        <div class="field">
             <label for="dpi">읽어 들일 해상도</label>
-            <p class="field-desc">숫자가 클수록 작은 글씨까지 잘 읽지만 더 오래 걸립니다.</p>
+            <p class="field-desc" id="dpi-description">
+                숫자가 클수록 작은 글씨까지 잘 읽지만 더 오래 걸립니다.
+            </p>
             <select id="dpi">
                 <option value="150">150 - 빠름 (글씨가 큰 문서)</option>
                 <option value="200">200 - 보통</option>
@@ -80,8 +116,8 @@
             <span class="field-title">변환 방식</span>
             <p class="field-desc">결과 PDF를 어떻게 만들지 고릅니다.</p>
 
-            <label class="choice">
-                <input type="radio" name="mode" value="keep" checked />
+            <label class="choice" id="mode-keep-choice">
+                <input type="radio" name="mode" id="mode-keep" value="keep" checked />
                 <span class="choice-text">
                     <strong>원본 그대로 두기 (권장)</strong>
                     <span>보이는 모습은 그대로 두고, 눈에 안 보이는 글자만 얹습니다.
@@ -89,8 +125,8 @@
                 </span>
             </label>
 
-            <label class="choice">
-                <input type="radio" name="mode" value="rebuild" />
+            <label class="choice" id="mode-rebuild-choice">
+                <input type="radio" name="mode" id="mode-rebuild" value="rebuild" />
                 <span class="choice-text">
                     <strong>용량 줄이기</strong>
                     <span>위에서 고른 해상도로 페이지를 다시 만듭니다.

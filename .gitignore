@@ -23,8 +23,12 @@ config/
 models/
 *.onnx
 
-# --- 브라우저용 계산 라이브러리 (25MB 남짓, 도커 빌드 때 받는다) ---
+# --- 브라우저용 계산 라이브러리와 모델 (도커 빌드 때 받는다) ---
 app/static/vendor/
+
+# --- 브라우저 OCR 빌드 중 생기는 설치·결과 파일 ---
+browser/node_modules/
+browser/dist/
 
 # --- 검증 스크립트가 만드는 임시 이미지 ---
 scripts/_gpu_test.png

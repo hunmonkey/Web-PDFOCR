@@ -4,6 +4,8 @@
 venv/
 __pycache__/
 *.pyc
+browser/node_modules/
+browser/dist/
 
 # 작업 파일과 설정 (실제 폴더는 도커 실행 때 바깥과 연결한다)
 uploads/
