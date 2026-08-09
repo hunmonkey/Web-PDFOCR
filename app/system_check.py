@@ -41,16 +41,35 @@ MIN_BUILD_FOR_DIRECTML = 18362
 # NVIDIA가 공개한 CUDA 12 요구 사항이며, 이 값 자체를 직접 시험해 보지는 않았다.
 MIN_NVIDIA_DRIVER_FOR_CUDA12 = 527.41
 
+# 그래픽카드가 얼마나 새것인지 나타내는 번호(compute capability)의 최소 기준.
+#
+# 드라이버가 최신이어도 이 번호가 낮으면 CUDA 가속을 쓸 수 없다.
+# onnxruntime을 만들 때 오래된 그래픽카드용 계산 코드를 빼고 만들기 때문이다.
+#
+# 실제로 겪은 일: 운영서버의 Quadro P620(번호 6.1)에서
+# "no kernel image is available for execution on the device" 오류가 나면서 실패했다.
+# 반면 RTX 5070 Ti(번호 12.0)는 정상 동작했다.
+# 그래서 기준을 7.0으로 잡았다. (7.0~11.x 사이는 직접 확인하지 못했다)
+MIN_COMPUTE_CAPABILITY = 7.0
+
 
 @dataclass
 class GpuInfo:
     name: str
     vendor: str            # NVIDIA / AMD / Intel / 기타
     driver_version: str = ""
+    compute_capability: float = 0.0   # NVIDIA만 해당. 0이면 알아내지 못한 것
 
     @property
     def is_nvidia(self) -> bool:
         return self.vendor == "NVIDIA"
+
+    @property
+    def too_old_for_cuda(self) -> bool:
+        """CUDA 가속을 쓰기에 너무 오래된 카드인지."""
+        if not self.compute_capability:
+            return False   # 알아내지 못했으면 일단 막지 않는다
+        return self.compute_capability < MIN_COMPUTE_CAPABILITY
 
 
 @dataclass
@@ -192,20 +211,27 @@ def _query_windows() -> dict:
         return {}
 
 
-def _nvidia_driver_version() -> str:
-    """nvidia-smi로 그래픽 드라이버 버전을 알아본다. NVIDIA가 없으면 빈 값."""
+def _nvidia_details() -> tuple[str, float]:
+    """nvidia-smi로 드라이버 버전과 카드 세대 번호를 알아본다.
+
+    NVIDIA가 없으면 빈 값과 0을 돌려준다.
+    """
     smi = shutil.which("nvidia-smi")
     if not smi:
-        return ""
+        return "", 0.0
     try:
         done = subprocess.run(
-            [smi, "--query-gpu=driver_version", "--format=csv,noheader"],
+            [smi, "--query-gpu=driver_version,compute_cap", "--format=csv,noheader"],
             capture_output=True, text=True, timeout=20,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        return done.stdout.strip().splitlines()[0].strip() if done.stdout.strip() else ""
-    except (subprocess.SubprocessError, OSError, IndexError):
-        return ""
+        first = (done.stdout or "").strip().splitlines()[0]
+        parts = [piece.strip() for piece in first.split(",")]
+        driver = parts[0] if parts else ""
+        capability = float(parts[1]) if len(parts) > 1 else 0.0
+        return driver, capability
+    except (subprocess.SubprocessError, OSError, IndexError, ValueError):
+        return "", 0.0
 
 
 def _installed_runtime() -> tuple[str, list[str]]:
@@ -248,7 +274,7 @@ def collect() -> SystemInfo:
     ram = raw.get("ram") or 0
     info.ram_gb = round(int(ram) / (1024 ** 3), 1) if ram else 0.0
 
-    driver = _nvidia_driver_version()
+    driver, capability = _nvidia_details()
     for entry in raw.get("gpus") or []:
         name = (entry.get("Name") or "").strip()
         if not name:
@@ -257,8 +283,9 @@ def collect() -> SystemInfo:
         info.gpus.append(GpuInfo(
             name=name,
             vendor=vendor,
-            # NVIDIA는 nvidia-smi 값이 더 정확하다. 나머지는 윈도우가 알려준 값을 쓴다.
+            # NVIDIA는 nvidia-smi 값이 더 정확하다. 나머지는 운영체제가 알려준 값을 쓴다.
             driver_version=driver if (vendor == "NVIDIA" and driver) else (entry.get("DriverVersion") or ""),
+            compute_capability=capability if vendor == "NVIDIA" else 0.0,
         ))
 
     info.installed_package, info.available_providers = _installed_runtime()
@@ -273,6 +300,16 @@ def recommend_package(info: SystemInfo) -> tuple[str, str]:
     nvidia = info.nvidia_gpu
 
     if nvidia is not None:
+        # 카드가 너무 오래되면 드라이버가 최신이어도 CUDA 가속을 쓸 수 없다.
+        if nvidia.too_old_for_cuda:
+            reason = (
+                f"{nvidia.name}은(는) 세대 번호가 {nvidia.compute_capability}로 낮아 "
+                f"CUDA 가속을 쓸 수 없습니다. (최소 {MIN_COMPUTE_CAPABILITY} 필요) "
+            )
+            if info.supports_directml:
+                return PACKAGE_DIRECTML, reason + "대신 DirectML로 설치합니다."
+            return PACKAGE_CPU, reason + "CPU로 처리합니다."
+
         driver = _driver_as_number(nvidia.driver_version)
         if driver and driver < MIN_NVIDIA_DRIVER_FOR_CUDA12:
             if info.supports_directml:
@@ -340,7 +377,9 @@ def describe(info: SystemInfo) -> list[str]:
         for index, gpu in enumerate(info.gpus):
             label = "그래픽     :" if index == 0 else "            "
             driver = f" (드라이버 {gpu.driver_version})" if gpu.driver_version else ""
-            lines.append(f"{label} {gpu.name} [{gpu.vendor}]{driver}")
+            age = f" 세대 {gpu.compute_capability}" if gpu.compute_capability else ""
+            note = " - CUDA 쓰기엔 오래됨" if gpu.too_old_for_cuda else ""
+            lines.append(f"{label} {gpu.name} [{gpu.vendor}]{driver}{age}{note}")
     else:
         lines.append("그래픽     : 찾지 못함")
 

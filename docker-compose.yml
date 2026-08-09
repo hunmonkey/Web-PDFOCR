@@ -9,6 +9,11 @@
 #   바깥에서       https://pdf.jaehoon.org  (Nginx Proxy Manager가 2222로 넘겨줌)
 # =============================================================================
 
+# 이 이름을 적어 두지 않으면 폴더 이름으로 묶음 이름이 정해진다.
+# 그러면 서버의 다른 컨테이너를 이 묶음의 '남은 것'으로 잘못 보고,
+# 정리 명령을 쓸 때 엉뚱한 것이 지워질 수 있다.
+name: web-pdfocr
+
 services:
   pdfocr:
     build: .
@@ -33,15 +38,19 @@ services:
 
     environment:
       - TZ=Asia/Seoul
-      # 그래픽카드가 느리거나 문제가 있을 때 1로 바꾸면 CPU만 쓴다.
-      - PDFOCR_FORCE_CPU=0
 
-    # 그래픽카드를 컨테이너에 넘겨준다. (Quadro P620)
-    # GPU를 쓰지 않기로 하면 이 deploy 항목을 통째로 지우면 된다.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # 그래픽카드는 넘겨주지 않는다.
+    # 이 서버의 Quadro P620은 세대 번호가 6.1로 낮아 CUDA 가속을 쓸 수 없다.
+    # (실제로 시험해 보니 "no kernel image is available" 오류로 실패했다)
+    # CPU로도 한 장에 0.5초 정도라 충분하다.
+    #
+    # 나중에 세대 번호 7.0 이상 그래픽카드로 바꾸면
+    # Dockerfile을 GPU용으로 되돌리고 아래 주석을 풀면 된다.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

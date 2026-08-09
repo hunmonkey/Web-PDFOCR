@@ -55,24 +55,19 @@ print(f"  CUDA DLL 폴더   : {len(_cuda_dirs)}곳 등록됨")
 def make_test_image(out_path: Path) -> Path:
     """PyMuPDF로 한글 문장이 담긴 PNG 이미지를 만든다.
 
-    별도 샘플 파일을 준비하지 않아도 검증할 수 있도록, 윈도우 기본 글꼴인
-    맑은 고딕으로 문장을 그린 뒤 300dpi 이미지로 저장한다.
+    글꼴은 PyMuPDF에 들어 있는 한국어 글꼴(korea)을 쓴다.
+    윈도우 글꼴(맑은 고딕)을 쓰면 도커 컨테이너처럼 그 글꼴이 없는 곳에서
+    한글이 그려지지 않아 "한글 미검출"로 잘못 판정된다.
     """
     import pymupdf
-
-    font_file = Path("C:/Windows/Fonts/malgun.ttf")
-    if not font_file.exists():
-        print("  [경고] 맑은 고딕 글꼴을 찾지 못해 영문으로만 시험합니다.")
 
     doc = pymupdf.open()
     page = doc.new_page(width=595, height=250)  # A4 너비, 낮은 높이
 
-    if font_file.exists():
-        page.insert_font(fontname="malgun", fontfile=str(font_file))
-        page.insert_text((40, 80), "한글 인식 시험 문장입니다.",
-                         fontname="malgun", fontsize=24)
-        page.insert_text((40, 130), "대한민국 서울특별시 2026년",
-                         fontname="malgun", fontsize=24)
+    page.insert_text((40, 80), "한글 인식 시험 문장입니다.",
+                     fontname="korea", fontsize=24)
+    page.insert_text((40, 130), "대한민국 서울특별시 2026년",
+                     fontname="korea", fontsize=24)
     page.insert_text((40, 180), "Searchable PDF Test 12345", fontsize=24)
 
     # 300dpi로 이미지화 (기본 72dpi 대비 300/72 배 확대)

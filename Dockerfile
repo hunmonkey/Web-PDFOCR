@@ -4,11 +4,20 @@
 # 운영서버(Unraid)에서 돌린다. 2222 포트로 서비스하고,
 # Nginx Proxy Manager가 pdf.jaehoon.org 를 이 포트로 넘겨준다.
 #
-# 그래픽 가속:
-#   Quadro P620(CUDA 12 계열 지원)을 쓸 수 있도록 onnxruntime-gpu를 넣는다.
-#   CUDA 라이브러리는 pip으로 함께 받으므로 무거운 CUDA 기반 이미지를 쓰지 않는다.
-#   그래픽카드 자체를 다루는 부분은 도커의 nvidia 런타임이 넘겨준다.
-#   GPU가 느리거나 문제가 있으면 PDFOCR_FORCE_CPU=1 로 CPU만 쓰게 할 수 있다.
+# 왜 CPU용으로 만드는가:
+#   이 서버의 그래픽카드는 Quadro P620이고 세대 번호(compute capability)가 6.1이다.
+#   실제로 GPU용으로 만들어 돌려 보니 아래 오류가 나면서 실패했다.
+#     "no kernel image is available for execution on the device"
+#   CUDA 12 자체는 이 카드를 지원하지만, onnxruntime을 만들 때 오래된 카드용
+#   계산 코드를 빼고 만들었기 때문이다.
+#
+#   그래서 CUDA 라이브러리(1.5GB 남짓)를 넣지 않는다. 이미지가 4.23GB에서 크게 줄고,
+#   쓰지도 못할 것을 받느라 시간을 쓰지 않는다.
+#   측정해 보니 이 서버 CPU(Xeon E-2236 12갈래)로 한 장에 0.5초 정도로 충분히 빠르다.
+#
+#   나중에 서버 그래픽카드를 새것(세대 번호 7.0 이상)으로 바꾸면
+#   아래 pip install 줄을 onnxruntime-gpu[cuda,cudnn]==1.26.0 으로 바꾸고
+#   docker-compose.yml 의 그래픽카드 항목을 되살리면 된다.
 # =============================================================================
 
 FROM python:3.12-slim
@@ -34,7 +43,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt \
-    && pip install "onnxruntime-gpu[cuda,cudnn]==1.26.0"
+    && pip install "onnxruntime==1.28.0"
 
 # 소스 복사
 COPY app ./app
@@ -44,7 +53,6 @@ COPY scripts ./scripts
 # 이 단계를 빼면 첫 변환 때 인터넷에서 받느라 한참 기다리게 되고,
 # 인터넷이 막힌 곳에서는 아예 동작하지 않는다.
 RUN python -c "\
-import os; os.environ['PDFOCR_FORCE_CPU']='1';\
 from app.ocr_engine import get_engine;\
 get_engine(use_gpu=False);\
 print('인식 모델 준비 완료')"
