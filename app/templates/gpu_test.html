@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>브라우저 그래픽카드 시험 - PDFOCR</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="page">
+
+    <header class="page-head">
+        <h1>브라우저 그래픽카드 시험</h1>
+        <p>이 PC의 그래픽카드로 글자 인식 계산을 할 수 있는지, 얼마나 빠른지 실제로 재 봅니다.
+           결과에 따라 앞으로의 방향을 정합니다.</p>
+    </header>
+
+    <section class="card">
+        <h2>1. 이 브라우저가 그래픽카드를 쓸 수 있는가</h2>
+        <dl class="result-grid" id="support-grid"></dl>
+    </section>
+
+    <section class="card">
+        <h2>2. 실제로 모델을 돌려 보기</h2>
+        <p class="card-hint">
+            처음 한 번은 계산 프로그램(약 25MB)과 인식 모델(약 22MB)을 내려받느라
+            시간이 걸립니다. 두 번째부터는 저장해 둔 것을 씁니다.
+        </p>
+        <div class="button-row">
+            <button type="button" class="button-main" id="run-button">시험 시작</button>
+        </div>
+        <div class="notice notice-plain" id="progress-box" style="margin-top:14px;">
+            아직 시작하지 않았습니다.
+        </div>
+    </section>
+
+    <section class="card is-hidden" id="result-card">
+        <h2>3. 측정 결과</h2>
+        <dl class="result-grid" id="result-grid"></dl>
+        <p class="card-hint" id="verdict"></p>
+        <div class="notice notice-plain" id="log-box"
+             style="white-space:pre-wrap; font-size:12px; max-height:260px; overflow:auto;"></div>
+    </section>
+
+</div>
+
+<script type="module">
+import * as ort from "/static/vendor/ort.webgpu.bundle.min.mjs";
+
+const el = {
+    supportGrid: document.getElementById("support-grid"),
+    runButton: document.getElementById("run-button"),
+    progressBox: document.getElementById("progress-box"),
+    resultCard: document.getElementById("result-card"),
+    resultGrid: document.getElementById("result-grid"),
+    verdict: document.getElementById("verdict"),
+    logBox: document.getElementById("log-box"),
+};
+
+const logLines = [];
+function log(line) {
+    logLines.push(line);
+    el.logBox.textContent = logLines.join("\n");
+    el.logBox.scrollTop = el.logBox.scrollHeight;
+}
+
+function addItem(grid, label, value, sub) {
+    const box = document.createElement("div");
+    box.className = "result-item";
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (sub) {
+        const s = document.createElement("span");
+        s.className = "sub";
+        s.textContent = sub;
+        dd.appendChild(s);
+    }
+    box.append(dt, dd);
+    grid.appendChild(box);
+}
+
+// ── 1단계: 이 브라우저가 그래픽카드를 쓸 수 있는지 ─────────────────────────
+let adapterInfo = null;
+
+async function checkSupport() {
+    const hasWebGPU = "gpu" in navigator;
+    addItem(el.supportGrid, "WebGPU 지원", hasWebGPU ? "가능" : "불가능",
+            hasWebGPU ? "브라우저가 그래픽카드를 쓸 수 있습니다" : "이 브라우저로는 쓸 수 없습니다");
+
+    if (!hasWebGPU) {
+        el.runButton.disabled = true;
+        el.progressBox.textContent =
+            "이 브라우저는 그래픽카드를 쓸 수 없습니다. 크롬이나 엣지 최신판에서 열어 주세요.";
+        return false;
+    }
+
+    try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+        if (!adapter) {
+            addItem(el.supportGrid, "그래픽카드", "찾지 못함", "");
+            el.runButton.disabled = true;
+            return false;
+        }
+        adapterInfo = adapter.info || {};
+        addItem(el.supportGrid, "그래픽카드",
+                adapterInfo.description || adapterInfo.vendor || "이름 확인 불가",
+                (adapterInfo.architecture || "") + " " + (adapterInfo.vendor || ""));
+        const limits = adapter.limits;
+        addItem(el.supportGrid, "한 번에 쓸 수 있는 메모리",
+                Math.round(limits.maxBufferSize / 1024 / 1024) + " MB",
+                "모델을 올릴 수 있는 크기");
+        return true;
+    } catch (err) {
+        addItem(el.supportGrid, "확인 실패", err.message, "");
+        el.runButton.disabled = true;
+        return false;
+    }
+}
+
+// ── 2단계: 실제 모델 실행 ─────────────────────────────────────────────────
+ort.env.wasm.wasmPaths = "/static/vendor/";
+ort.env.wasm.numThreads = 1;
+
+const DET_URL = "/api/models/det";
+const REC_URL = "/api/models/rec";
+
+async function fetchModel(url, label) {
+    el.progressBox.textContent = `${label} 모델을 내려받는 중입니다.`;
+    const started = performance.now();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${label} 모델을 받지 못했습니다 (${res.status})`);
+    const buffer = await res.arrayBuffer();
+    log(`${label} 모델 ${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB, ` +
+        `받는 데 ${((performance.now() - started) / 1000).toFixed(1)}초`);
+    return new Uint8Array(buffer);
+}
+
+async function benchmark(modelBytes, label, provider, inputShape) {
+    const started = performance.now();
+    let session;
+    try {
+        session = await ort.InferenceSession.create(modelBytes, {
+            executionProviders: [provider],
+            graphOptimizationLevel: "all",
+        });
+    } catch (err) {
+        log(`[${label}/${provider}] 세션 만들기 실패: ${err.message}`);
+        return null;
+    }
+    const setupMs = performance.now() - started;
+
+    const inputName = session.inputNames[0];
+    const size = inputShape.reduce((a, b) => a * b, 1);
+    const data = new Float32Array(size);
+    for (let i = 0; i < size; i += 1) data[i] = Math.random();
+    const feeds = {};
+    feeds[inputName] = new ort.Tensor("float32", data, inputShape);
+
+    try {
+        await session.run(feeds);   // 준비 운동
+    } catch (err) {
+        log(`[${label}/${provider}] 실행 실패: ${err.message}`);
+        return null;
+    }
+
+    const times = [];
+    for (let i = 0; i < 3; i += 1) {
+        const t0 = performance.now();
+        await session.run(feeds);
+        times.push(performance.now() - t0);
+    }
+    const best = Math.min(...times);
+    log(`[${label}/${provider}] 준비 ${(setupMs / 1000).toFixed(1)}초, ` +
+        `한 번 실행 ${best.toFixed(0)}ms`);
+    return { setupMs, best };
+}
+
+el.runButton.addEventListener("click", async () => {
+    el.runButton.disabled = true;
+    el.runButton.textContent = "시험하는 중입니다.";
+    el.resultCard.classList.remove("is-hidden");
+    el.resultGrid.innerHTML = "";
+
+    try {
+        const detBytes = await fetchModel(DET_URL, "글자 위치 찾기");
+        const recBytes = await fetchModel(REC_URL, "글자 읽기");
+
+        // 검출 모델은 300dpi A4를 줄인 크기, 인식 모델은 글줄 여러 개를 한 번에.
+        const DET_SHAPE = [1, 3, 736, 736];
+        const REC_SHAPE = [6, 3, 48, 320];
+
+        el.progressBox.textContent = "그래픽카드로 계산해 보는 중입니다.";
+        const detGpu = await benchmark(detBytes, "검출", "webgpu", DET_SHAPE);
+        const recGpu = await benchmark(recBytes, "인식", "webgpu", REC_SHAPE);
+
+        el.progressBox.textContent = "비교를 위해 CPU로도 계산해 보는 중입니다.";
+        const detCpu = await benchmark(detBytes, "검출", "wasm", DET_SHAPE);
+        const recCpu = await benchmark(recBytes, "인식", "wasm", REC_SHAPE);
+
+        el.progressBox.textContent = "시험이 끝났습니다.";
+
+        const gpuOk = detGpu && recGpu;
+        if (gpuOk) {
+            // 한 쪽을 처리하려면 검출 1번 + 인식 여러 번이 필요하다.
+            // 글줄이 30개면 6개씩 5묶음으로 본다.
+            const perPageGpu = (detGpu.best + recGpu.best * 5) / 1000;
+            const perPageCpu = detCpu && recCpu ? (detCpu.best + recCpu.best * 5) / 1000 : null;
+
+            addItem(el.resultGrid, "글자 위치 찾기", detGpu.best.toFixed(0) + " ms",
+                    detCpu ? `CPU는 ${detCpu.best.toFixed(0)} ms` : "");
+            addItem(el.resultGrid, "글자 읽기(6줄)", recGpu.best.toFixed(0) + " ms",
+                    recCpu ? `CPU는 ${recCpu.best.toFixed(0)} ms` : "");
+            addItem(el.resultGrid, "한 쪽 예상 시간", perPageGpu.toFixed(2) + " 초",
+                    "글줄 30개 기준 어림값");
+            if (perPageCpu) {
+                addItem(el.resultGrid, "브라우저 CPU 대비",
+                        (perPageCpu / perPageGpu).toFixed(1) + " 배", "그래픽카드가 빠른 정도");
+            }
+
+            el.verdict.textContent =
+                `그래픽카드로 계산이 됩니다. 지금 서버는 한 쪽에 1.7초가 걸리는데, ` +
+                `이 PC의 그래픽카드로는 약 ${perPageGpu.toFixed(2)}초로 예상됩니다.`;
+        } else {
+            addItem(el.resultGrid, "판정", "그래픽카드 사용 실패", "아래 기록을 확인해 주세요");
+            el.verdict.textContent =
+                "이 브라우저에서는 그래픽카드로 모델을 돌리지 못했습니다. " +
+                "아래 기록을 재훈 님께 보여 주시면 원인을 찾겠습니다.";
+        }
+    } catch (err) {
+        el.progressBox.textContent = "시험 중 문제가 생겼습니다: " + err.message;
+        log("오류: " + err.stack);
+    }
+
+    el.runButton.disabled = false;
+    el.runButton.textContent = "다시 시험";
+});
+
+checkSupport();
+</script>
+</body>
+</html>

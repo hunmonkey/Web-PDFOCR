@@ -261,6 +261,49 @@ async def index(request: Request):
 # ─────────────────────────────────────────────────────────────────────────────
 # 작업 만들기
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# 브라우저 그래픽카드 시험 (실현 가능성 확인용)
+# ─────────────────────────────────────────────────────────────────────────────
+@app.get("/gpu-test")
+async def gpu_test_page(request: Request):
+    return templates.TemplateResponse(request, "gpu_test.html")
+
+
+@app.get("/api/models/{kind}")
+async def get_model(kind: str):
+    """인식 모델 파일을 브라우저에 내려준다.
+
+    브라우저가 그래픽카드로 계산하려면 모델 파일 자체가 필요하다.
+    파일이 크므로(수십 MB) 브라우저가 한 번 받아 두고 다시 쓰도록 캐시를 길게 준다.
+    """
+    from app import ocr_engine
+
+    models_dir = Path(ocr_engine.__file__).resolve()
+    try:
+        import rapidocr
+        models_dir = Path(rapidocr.__file__).resolve().parent / "models"
+    except ImportError:
+        raise HTTPException(500, "인식 모델 폴더를 찾지 못했습니다.")
+
+    # 이름을 그대로 파일 경로에 쓰지 않는다. 정해진 것만 받는다.
+    names = {
+        "det": ["PP-OCRv6_det_small.onnx", "PP-OCRv6_det_tiny.onnx"],
+        "rec": ["korean_PP-OCRv5_rec_mobile.onnx"],
+    }
+    if kind not in names:
+        raise HTTPException(404, "그런 모델은 없습니다.")
+
+    for name in names[kind]:
+        path = models_dir / name
+        if path.is_file():
+            return FileResponse(
+                path,
+                media_type="application/octet-stream",
+                headers={"Cache-Control": "public, max-age=604800"},   # 7일
+            )
+    raise HTTPException(404, "모델 파일을 찾지 못했습니다. 먼저 한 번 변환을 실행해 주세요.")
+
+
 @app.get("/api/storage/files")
 async def storage_files() -> dict:
     """보관함('원본' 폴더)에 있는 PDF 목록을 돌려준다."""

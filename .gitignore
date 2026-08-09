@@ -23,6 +23,9 @@ config/
 models/
 *.onnx
 
+# --- 브라우저용 계산 라이브러리 (25MB 남짓, 도커 빌드 때 받는다) ---
+app/static/vendor/
+
 # --- 검증 스크립트가 만드는 임시 이미지 ---
 scripts/_gpu_test.png
 

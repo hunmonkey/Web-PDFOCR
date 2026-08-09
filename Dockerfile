@@ -49,6 +49,14 @@ RUN pip install --upgrade pip \
 COPY app ./app
 COPY scripts ./scripts
 
+# 브라우저가 그래픽카드로 계산할 때 쓰는 라이브러리를 받아 둔다.
+# 용량이 커서(25MB 남짓) 저장소에 넣지 않고 여기서 받는다.
+ARG ORT_WEB_VERSION=1.27.0
+RUN mkdir -p app/static/vendor && cd app/static/vendor && \
+    for f in ort.webgpu.bundle.min.mjs ort-wasm-simd-threaded.jsep.wasm ort-wasm-simd-threaded.jsep.mjs; do \
+        curl -fsSL -o "$f" "https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_WEB_VERSION}/dist/$f"; \
+    done && ls -lh
+
 # 글자 인식 모델을 미리 받아 둔다.
 # 이 단계를 빼면 첫 변환 때 인터넷에서 받느라 한참 기다리게 되고,
 # 인터넷이 막힌 곳에서는 아예 동작하지 않는다.
