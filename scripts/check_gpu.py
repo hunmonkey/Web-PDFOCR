@@ -157,6 +157,15 @@ def main() -> int:
         print(f"  성공 - {backend} 가속과 한글 인식이 모두 정상입니다.")
         return 0
     if has_hangul:
+        old_gpu = next((g for g in _info.gpus if g.too_old_for_cuda), None)
+        if old_gpu is not None:
+            # 이 경우는 고칠 방법이 없다. 괜한 삽질을 하지 않도록 분명히 알려 준다.
+            print("  정상 - 한글 인식이 잘 되고 있습니다. CPU로 처리합니다.")
+            print(f"         {old_gpu.name}은(는) 세대 번호가 {old_gpu.compute_capability}로 낮아")
+            print("         그래픽 가속을 쓸 수 없습니다. 드라이버를 올려도 달라지지 않습니다.")
+            print("         그래픽 가속을 쓰려면 세대 번호 7.0 이상 카드가 필요합니다.")
+            return 0
+
         print("  주의 - 한글 인식은 되지만 CPU로 처리되고 있습니다.")
         print("         동작에는 문제가 없지만 그래픽 가속보다 느립니다.")
         print("         그래픽카드가 있는 PC라면 아래를 확인해 보세요.")

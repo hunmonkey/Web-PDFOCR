@@ -93,6 +93,57 @@ python -m venv .venv
 
 ---
 
+## 3-1. 운영서버 배포 (도커)
+
+운영서버(Unraid)에서는 도커로 돌아갑니다. 주소는 <https://pdf.jaehoon.org> 입니다.
+
+| 항목 | 값 |
+|---|---|
+| 포트 | 2222 (Nginx Proxy Manager가 도메인을 이 포트로 넘겨줍니다) |
+| 문서 폴더 | `/mnt/user/GRM-BOX/PDFOCR` → 컨테이너 안 `/data` |
+| 설정 폴더 | `/mnt/user/appdata/Web-PDFOCR/config` → 컨테이너 안 `/config` |
+| 소스 위치 | `/mnt/user/appdata/Web-PDFOCR/src` |
+
+### 폴더 구조
+
+```
+/mnt/user/GRM-BOX/PDFOCR/
+├── 원본/       ← 스캔한 PDF를 여기에 넣으면 화면에서 골라 변환할 수 있습니다
+└── 변환완료/   ← 변환이 끝난 PDF가 여기에 쌓입니다
+```
+
+### 처음 로그인
+
+아이디 `admin`, 비밀번호 `admin` 입니다.
+**첫 로그인 때 비밀번호를 바꾸기 전에는 다른 화면을 쓸 수 없습니다.**
+인터넷에 열려 있는 주소라 처음 비밀번호를 그대로 두면 위험하기 때문입니다.
+
+### 새로 배포하기
+
+```bash
+cd /mnt/user/appdata/Web-PDFOCR/src
+git pull
+docker compose up -d --build
+```
+
+### 왜 CPU로 도는가
+
+이 서버의 그래픽카드는 Quadro P620인데 세대 번호(compute capability)가 6.1입니다.
+실제로 GPU용으로 만들어 돌려 보니 아래 오류로 실패했습니다.
+
+```
+no kernel image is available for execution on the device
+```
+
+CUDA 12 자체는 이 카드를 지원하지만, onnxruntime을 만들 때 오래된 카드용 계산 코드를
+빼고 만들었기 때문입니다. **드라이버를 올려도 달라지지 않습니다.**
+
+CPU로도 300dpi 기준 **한 쪽에 약 1.7초**라 쓰는 데 문제가 없습니다.
+나중에 세대 번호 7.0 이상 그래픽카드로 바꾸면 `Dockerfile`과 `docker-compose.yml`의
+주석대로 되돌리면 가속을 쓸 수 있습니다.
+
+---
+
 ## 4. 사용 방법
 
 1. **파일 고르기** — 스캔한 PDF를 끌어다 놓거나 눌러서 고릅니다.
