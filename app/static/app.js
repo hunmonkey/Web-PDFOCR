@@ -11,6 +11,14 @@
         dropzone: document.getElementById("dropzone"),
         fileInput: document.getElementById("file-input"),
         pickedFile: document.getElementById("picked-file"),
+        logoutButton: document.getElementById("logout-button"),
+        tabUploadButton: document.getElementById("tab-upload-button"),
+        tabStorageButton: document.getElementById("tab-storage-button"),
+        tabUpload: document.getElementById("tab-upload"),
+        tabStorage: document.getElementById("tab-storage"),
+        storageList: document.getElementById("storage-list"),
+        storageHint: document.getElementById("storage-hint"),
+        storageRefresh: document.getElementById("storage-refresh"),
         dpi: document.getElementById("dpi"),
         textScore: document.getElementById("text-score"),
         readyHint: document.getElementById("ready-hint"),
@@ -39,7 +47,20 @@
         "취소": "badge-canceled",
     };
 
-    let pickedFile = null;
+    // 어떤 장치로 처리했는지 쉬운 말로 바꿔 보여 준다.
+    const DEVICE_LABEL = {
+        "CUDA": "그래픽카드",
+        "DirectML": "그래픽카드",
+        "CPU": "중앙처리장치",
+    };
+    const DEVICE_HINT = {
+        "CUDA": "NVIDIA 가속 사용",
+        "DirectML": "DirectML 가속 사용",
+        "CPU": "그래픽 가속을 쓰지 못해 CPU로 처리",
+    };
+
+    let pickedFile = null;      // 내 컴퓨터에서 고른 파일
+    let pickedStored = null;    // 보관함에서 고른 파일 {relative, name, size}
     let currentJobId = null;
     let eventSource = null;
 
@@ -67,7 +88,14 @@
         hide(el.errorBox);
     }
 
-    // ── 파일 고르기 ───────────────────────────────────────────────────────
+    // ── 고른 파일 표시 ────────────────────────────────────────────────────
+    function markReady(label) {
+        el.pickedFile.textContent = label;
+        el.pickedFile.classList.add("is-shown");
+        el.startButton.disabled = false;
+        el.readyHint.textContent = "이제 변환을 시작할 수 있습니다.";
+    }
+
     function pickFile(file) {
         if (!file) return;
         if (!file.name.toLowerCase().endsWith(".pdf")) {
@@ -76,11 +104,106 @@
         }
         clearError();
         pickedFile = file;
-        el.pickedFile.textContent = file.name + " (" + formatSize(file.size) + ")";
-        el.pickedFile.classList.add("is-shown");
-        el.startButton.disabled = false;
-        el.readyHint.textContent = "이제 변환을 시작할 수 있습니다.";
+        pickedStored = null;   // 두 곳에서 동시에 고를 수 없다
+        markReady("올릴 파일: " + file.name + " (" + formatSize(file.size) + ")");
     }
+
+    function pickStored(item, node) {
+        clearError();
+        pickedStored = item;
+        pickedFile = null;
+        el.fileInput.value = "";
+        el.storageList.querySelectorAll(".storage-item").forEach((row) => {
+            row.classList.toggle("is-picked", row === node);
+        });
+        markReady("보관함 파일: " + item.relative + " (" + formatSize(item.size) + ")");
+    }
+
+    // ── 탭 바꾸기 ─────────────────────────────────────────────────────────
+    function switchTab(name) {
+        const onUpload = name === "upload";
+        el.tabUploadButton.classList.toggle("is-active", onUpload);
+        el.tabStorageButton.classList.toggle("is-active", !onUpload);
+        el.tabUploadButton.setAttribute("aria-selected", String(onUpload));
+        el.tabStorageButton.setAttribute("aria-selected", String(!onUpload));
+        el.tabUpload.classList.toggle("is-hidden", !onUpload);
+        el.tabStorage.classList.toggle("is-hidden", onUpload);
+
+        if (!onUpload && el.storageList.children.length === 0) {
+            loadStorage();
+        }
+    }
+
+    el.tabUploadButton.addEventListener("click", () => switchTab("upload"));
+    el.tabStorageButton.addEventListener("click", () => switchTab("storage"));
+
+    // ── 보관함 목록 ───────────────────────────────────────────────────────
+    async function loadStorage() {
+        // 불러오는 중에는 같은 크기의 자리표시를 보여 준다. (빈 화면은 고장으로 보인다)
+        el.storageHint.textContent = "보관함을 불러오는 중입니다.";
+        el.storageList.innerHTML = "";
+        for (let i = 0; i < 3; i += 1) {
+            const skeleton = document.createElement("div");
+            skeleton.className = "storage-skeleton";
+            el.storageList.appendChild(skeleton);
+        }
+
+        try {
+            const res = await fetch("/api/storage/files");
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.detail || "보관함을 읽지 못했습니다.");
+            }
+
+            el.storageList.innerHTML = "";
+            if (data.files.length === 0) {
+                el.storageHint.textContent =
+                    "보관함이 비어 있습니다. 서버의 '" + data.source_dir + "' 폴더에 PDF를 넣어 주세요.";
+                return;
+            }
+
+            el.storageHint.textContent =
+                "'" + data.source_dir + "' 안의 PDF " + data.files.length + "개입니다.";
+
+            data.files.forEach((item) => {
+                const row = document.createElement("label");
+                row.className = "storage-item";
+
+                const radio = document.createElement("input");
+                radio.type = "radio";
+                radio.name = "stored-file";
+
+                const body = document.createElement("span");
+                body.className = "storage-item-body";
+                const name = document.createElement("span");
+                name.className = "storage-item-name";
+                name.textContent = item.relative;
+                const meta = document.createElement("span");
+                meta.className = "storage-item-meta";
+                meta.textContent = formatSize(item.size) + " · " + item.modified;
+                body.append(name, meta);
+
+                row.append(radio, body);
+                row.addEventListener("click", () => {
+                    radio.checked = true;
+                    pickStored(item, row);
+                });
+                el.storageList.appendChild(row);
+            });
+        } catch (err) {
+            el.storageList.innerHTML = "";
+            el.storageHint.textContent = err.message;
+        }
+    }
+
+    el.storageRefresh.addEventListener("click", loadStorage);
+
+    // ── 로그아웃 ──────────────────────────────────────────────────────────
+    el.logoutButton.addEventListener("click", async () => {
+        const res = await fetch("/api/logout", { method: "POST" });
+        const data = await res.json();
+        window.location.href = data.next || "/login";
+    });
 
     el.dropzone.addEventListener("click", () => el.fileInput.click());
     el.dropzone.addEventListener("keydown", (event) => {
@@ -110,7 +233,7 @@
 
     // ── 변환 시작 ─────────────────────────────────────────────────────────
     el.startButton.addEventListener("click", async () => {
-        if (!pickedFile) return;
+        if (!pickedFile && !pickedStored) return;
 
         const score = parseFloat(el.textScore.value);
         if (Number.isNaN(score) || score < 0 || score > 1) {
@@ -125,7 +248,11 @@
         el.startButton.textContent = "변환을 요청하는 중입니다.";
 
         const form = new FormData();
-        form.append("file", pickedFile);
+        if (pickedFile) {
+            form.append("file", pickedFile);
+        } else {
+            form.append("source_path", pickedStored.relative);
+        }
         form.append("dpi", el.dpi.value);
         form.append("text_score", String(score));
         form.append("mode", document.querySelector('input[name="mode"]:checked').value);
@@ -226,8 +353,8 @@
             { label: "처리한 쪽수", value: result.pages + "쪽",
               sub: "찾은 글줄 " + result.text_lines + "개" },
             { label: "변환 후 용량", value: formatSize(result.output_bytes), sub: sizeText },
-            { label: "사용한 장치", value: result.device === "GPU" ? "그래픽카드" : "중앙처리장치",
-              sub: result.device === "GPU" ? "GPU 가속 사용" : "GPU를 쓰지 못해 CPU로 처리" },
+            { label: "사용한 장치", value: DEVICE_LABEL[result.device] || result.device,
+              sub: DEVICE_HINT[result.device] || "" },
         ];
 
         el.resultGrid.innerHTML = "";
@@ -246,7 +373,9 @@
             el.resultGrid.appendChild(box);
         });
 
-        el.resultHint.textContent = "이제 PDF 안에서 글자를 찾을 수 있습니다.";
+        el.resultHint.textContent =
+            "이제 PDF 안에서 글자를 찾을 수 있습니다. " +
+            "서버의 '" + result.saved_dir + "' 폴더에 " + result.saved_name + " 으로 저장했습니다.";
         show(el.resultCard);
     }
 
@@ -262,8 +391,12 @@
             eventSource = null;
         }
         pickedFile = null;
+        pickedStored = null;
         currentJobId = null;
         el.fileInput.value = "";
+        el.storageList.querySelectorAll(".storage-item").forEach((row) => {
+            row.classList.remove("is-picked");
+        });
         el.pickedFile.textContent = "";
         el.pickedFile.classList.remove("is-shown");
         el.startButton.disabled = true;

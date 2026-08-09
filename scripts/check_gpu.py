@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-GPU(CUDA) 실동작 및 한글 OCR 검증 스크립트
+실행 환경 진단 및 한글 OCR 확인 도구
 
-이 스크립트는 "설치가 됐다"가 아니라 "실제로 GPU에서 한글이 읽힌다"까지 확인한다.
-RTX 3050(Ampere) PC와 RTX 5070 Ti(Blackwell) PC 양쪽에서 각각 한 번씩 실행해
-같은 결과가 나오는지 보는 용도다.
+"설치가 됐다"가 아니라 "이 PC에서 실제로 한글이 읽힌다"까지 확인한다.
+PC를 바꿀 때마다 한 번씩 돌려 보는 용도다.
 
 실행:
     .venv\\Scripts\\python.exe scripts\\check_gpu.py
@@ -19,20 +18,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # CUDA 경로 준비와 onnxruntime 불러오기는 app/ocr_engine.py가 이미 알맞은 순서로 처리한다.
 # 같은 코드를 두 군데 두면 한쪽만 고치는 실수가 생기므로 그대로 가져다 쓴다.
-from app.ocr_engine import CUDA_DLL_DIRS, ort
+from app.ocr_engine import BACKEND_CPU, CUDA_DLL_DIRS, ort
+from app.system_check import collect, describe, recommend_package
 
 _cuda_dirs = CUDA_DLL_DIRS
 
 print("=" * 60)
-print("1. onnxruntime 기본 정보")
+print("1. 이 PC의 상태")
+print("=" * 60)
+_info = collect()
+for _line in describe(_info):
+    print("  " + _line)
+
+_recommended, _reason = recommend_package(_info)
+if _recommended.split("[")[0].split("==")[0] not in _info.installed_package:
+    print()
+    print("  [알림] 지금 설치된 부품이 이 PC에 가장 알맞은 것이 아닐 수 있습니다.")
+    print(f"         {_reason}")
+    print(f"         권장: {_recommended}")
+    print(r"         바꾸려면: .venv\Scripts\python.exe scripts\setup.py")
+
+print()
+print("=" * 60)
+print("2. 실행 부품 정보")
 print("=" * 60)
 print(f"  버전            : {ort.__version__}")
-print(f"  인식된 장치     : {ort.get_device()}")          # GPU 또는 CPU
 print(f"  사용 가능 목록  : {ort.get_available_providers()}")
 print(f"  CUDA DLL 폴더   : {len(_cuda_dirs)}곳 등록됨")
 
-# get_device()가 GPU라고 해도 실제 추론까지 성공한다는 보장은 없다.
-# (예: GPU 세대가 너무 최신이라 해당 CUDA 빌드에 맞는 커널이 없는 경우)
+# 목록에 이름이 있다고 해서 실제 계산까지 성공한다는 보장은 없다.
+# (예: 그래픽카드가 너무 최신이라 맞는 계산 방식이 들어 있지 않은 경우)
 # 그래서 아래에서 실제 모델을 돌려 본다.
 
 
@@ -67,36 +82,33 @@ def make_test_image(out_path: Path) -> Path:
     return out_path
 
 
-# ── 3단계: RapidOCR을 CUDA 모드로 초기화하고 실제로 돌려 보기 ────────────────
-def run_ocr(use_cuda: bool, img_path: Path):
+# ── 실제로 돌려 보기 ─────────────────────────────────────────────────────────
+def run_ocr(img_path: Path):
     """실제 프로그램과 똑같은 설정으로 OCR을 한 번 수행하고 결과를 돌려준다.
 
     설정을 여기서 따로 적지 않고 app/ocr_engine.py의 것을 그대로 쓴다.
-    그래야 "검증은 통과했는데 실제 변환은 다르게 동작"하는 일이 생기지 않는다.
+    그래야 "확인은 통과했는데 실제 변환은 다르게 동작"하는 일이 생기지 않는다.
     """
     from app.ocr_engine import get_engine
 
-    engine, _ = get_engine(use_gpu=use_cuda)
+    engine, backend = get_engine(use_gpu=True)
 
-    # 실제로 어떤 장치에서 도는지 확인한다.
-    # 세션 목록의 맨 앞이 CUDAExecutionProvider여야 GPU로 도는 것이다.
+    # 부분별로 어느 장치에 올라갔는지 들여다본다.
     providers = {}
-    for name in ("text_det", "text_cls", "text_rec"):
+    for name in ("text_det", "text_rec"):
         part = getattr(engine, name, None)
         session = getattr(getattr(part, "session", None), "session", None)
-        if session is None:
-            session = getattr(part, "session", None)
         if session is not None and hasattr(session, "get_providers"):
             providers[name] = session.get_providers()[0]
 
-    # 첫 호출은 모델을 GPU에 올리는 준비 시간이 포함되므로 두 번 재서
+    # 첫 호출에는 모델을 장치에 올리는 준비 시간이 섞이므로 두 번 재서
     # 두 번째(실제 처리 속도)를 기록한다.
     engine(str(img_path))
     started = time.perf_counter()
     result = engine(str(img_path))
     elapsed = time.perf_counter() - started
 
-    return providers, result, elapsed
+    return backend, providers, result, elapsed
 
 
 def main() -> int:
@@ -105,33 +117,31 @@ def main() -> int:
 
     print()
     print("=" * 60)
-    print("2. 시험용 이미지 생성")
-    print("=" * 60)
-    print(f"  경로 : {img_path}")
-
-    print()
-    print("=" * 60)
-    print("3. GPU(CUDA) 모드 OCR 시험")
+    print("3. 한글 인식 시험")
     print("=" * 60)
     print("  ※ 처음 실행 시 인식 모델을 내려받느라 시간이 걸릴 수 있습니다.")
 
     try:
-        providers, result, elapsed = run_ocr(use_cuda=True, img_path=img_path)
+        backend, providers, result, elapsed = run_ocr(img_path=img_path)
     except Exception as exc:
-        print(f"  [실패] GPU 모드 실행 중 오류: {type(exc).__name__}: {exc}")
+        print(f"  [실패] 실행 중 오류: {type(exc).__name__}: {exc}")
         return 1
 
     for part, provider in providers.items():
-        mark = "GPU" if "CUDA" in provider else "CPU"
-        print(f"  {part:9s} → {provider}  [{mark}]")
+        korean = {"text_det": "글자 위치 찾기", "text_rec": "글자 읽기"}.get(part, part)
+        print(f"  {korean:12s} → {provider}")
 
-    on_gpu = all("CUDA" in p for p in providers.values())
-    print(f"  처리 시간 : {elapsed:.3f}초")
-    print(f"  판정      : {'GPU 가속 정상' if on_gpu else 'GPU 가속 실패 (CPU로 처리됨)'}")
+    on_gpu = backend != BACKEND_CPU
+    print(f"  처리 시간   : {elapsed:.3f}초")
+    print(f"  실행 방식   : {backend}")
+    if on_gpu:
+        print("  판정        : 그래픽 가속 정상")
+    else:
+        print("  판정        : CPU로 처리 중 (동작은 하지만 느립니다)")
 
     print()
     print("=" * 60)
-    print("4. 한글 인식 결과")
+    print("4. 읽어 낸 글자")
     print("=" * 60)
     texts = list(result.txts) if result.txts else []
     if not texts:
@@ -149,11 +159,14 @@ def main() -> int:
     print("최종 판정")
     print("=" * 60)
     if on_gpu and has_hangul:
-        print("  성공 - GPU 가속과 한글 인식이 모두 정상입니다.")
+        print(f"  성공 - {backend} 가속과 한글 인식이 모두 정상입니다.")
         return 0
     if has_hangul:
         print("  주의 - 한글 인식은 되지만 CPU로 처리되고 있습니다.")
-        print("         그래픽 드라이버 버전과 CUDA 설치 상태를 확인해 주세요.")
+        print("         동작에는 문제가 없지만 그래픽 가속보다 느립니다.")
+        print("         그래픽카드가 있는 PC라면 아래를 확인해 보세요.")
+        print("           1) NVIDIA 그래픽 드라이버를 최신으로 올린다")
+        print(r"           2) .venv\Scripts\python.exe scripts\setup.py 를 다시 실행한다")
         return 2
     print("  실패 - 위 출력 내용을 확인해 주세요.")
     return 1

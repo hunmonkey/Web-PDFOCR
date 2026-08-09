@@ -63,6 +63,14 @@ import pymupdf  # noqa: E402
 if hasattr(ort, "preload_dlls"):
     ort.preload_dlls()
 
+# 환경 점검은 onnxruntime을 불러온 뒤에 가져온다. (안에서 설치된 부품을 살펴보기 때문)
+from app.system_check import (  # noqa: E402
+    BACKEND_CPU,
+    BACKEND_CUDA,
+    BACKEND_DIRECTML,
+    active_backend,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 설정값
@@ -103,7 +111,7 @@ class OcrSummary:
     elapsed: float = 0.0         # 걸린 시간(초)
     input_bytes: int = 0
     output_bytes: int = 0
-    device: str = "CPU"          # 실제로 사용한 장치
+    device: str = BACKEND_CPU    # 실제로 사용한 장치 (CUDA / DirectML / CPU)
     stopped: bool = False        # 사용자가 중지했는지
 
 
@@ -114,17 +122,35 @@ class OcrSummary:
 _engine_cache: dict = {}
 
 
-def _build_engine(use_cuda: bool):
-    """RapidOCR 엔진을 만든다."""
-    from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR
+def _build_engine(backend: str):
+    """정해진 실행 방식에 맞춰 RapidOCR 엔진을 만든다.
 
-    return RapidOCR(params={
-        # 글자를 읽는 모델을 한국어용으로 지정한다.
+    검출 모델(글자 위치를 찾는 모델)은 실행 방식에 따라 크기를 달리 쓴다.
+    측정해 보니 그래픽 가속을 쓸 때는 모델을 키워도 속도가 거의 그대로였지만
+    (0.31~0.34초), CPU에서는 tiny 0.97초 / small 1.75초 / medium 12.2초로
+    차이가 매우 컸다. 정확도는 다섯 모델 모두 같았다.
+    그래서 가속이 되면 small, CPU면 tiny를 쓴다.
+    """
+    from rapidocr import LangDet, LangRec, ModelType, OCRVersion, RapidOCR
+
+    on_cpu = backend == BACKEND_CPU
+
+    params = {
+        # ── 글자 위치를 찾는 모델 ──
+        "Det.ocr_version": OCRVersion.PPOCRV6,
+        "Det.model_type": ModelType.TINY if on_cpu else ModelType.SMALL,
+        # v6 검출 모델은 파일 이름이 multi_ 로 시작하지만
+        # 설정에는 'multi'가 아니라 'ch'를 넣어야 한다. (multi는 거부됨)
+        "Det.lang_type": LangDet.CH,
+
+        # ── 글자를 읽는 모델 ──
         # 기본값은 중국어 모델이라 한글이 제대로 나오지 않는다.
         # 이 항목들은 문자열이 아니라 rapidocr가 정한 Enum 값을 넣어야 한다.
+        # 한국어 인식 모델은 mobile 한 종류뿐이라 고를 것이 없다.
         "Rec.lang_type": LangRec.KOREAN,
         "Rec.ocr_version": OCRVersion.PPOCRV5,   # 한국어 모델은 v5까지 제공된다
         "Rec.model_type": ModelType.MOBILE,
+
         # 글줄이 거꾸로 뒤집혀 있는지 판단하는 기능(cls)을 끈다.
         # 켜 두면 똑바로 된 한글 줄을 거꾸로라고 잘못 판단해 글자를 망가뜨린다.
         # (시험 문서 5줄 중 2줄이 "대한민국 서울특별시..." → "SZ드연무위을위위터"처럼
@@ -136,43 +162,76 @@ def _build_engine(use_cuda: bool):
         # 엔진 쪽 기준은 낮춰 두고, 설정을 바꿔도 엔진을 다시 만들지 않게 한다.
         "Global.text_score": 0.0,
         "Global.log_level": "warning",
-        "EngineConfig.onnxruntime.use_cuda": use_cuda,
-        "EngineConfig.onnxruntime.cuda_ep_cfg.device_id": 0,
-    })
+    }
+
+    if backend == BACKEND_CUDA:
+        params["EngineConfig.onnxruntime.use_cuda"] = True
+        params["EngineConfig.onnxruntime.cuda_ep_cfg.device_id"] = 0
+    elif backend == BACKEND_DIRECTML:
+        # DirectML은 윈도우가 제공하는 공용 가속 방식이라
+        # AMD·Intel 그래픽에서도 쓸 수 있다.
+        params["EngineConfig.onnxruntime.use_dml"] = True
+    else:
+        # CPU로 처리할 때는 이 PC의 처리 갈래 수만큼 나눠 쓴다.
+        threads = os.cpu_count() or 0
+        if threads:
+            params["EngineConfig.onnxruntime.intra_op_num_threads"] = threads
+
+    return RapidOCR(params=params)
 
 
 def _detect_device(engine) -> str:
     """엔진이 실제로 어느 장치에서 도는지 확인한다.
 
-    설정만 GPU로 해 두고 실제로는 CPU로 도는 경우가 있어서, 세션에 등록된
-    실행 장치를 직접 들여다본다.
+    설정만 가속으로 해 두고 실제로는 CPU로 도는 경우가 있어서,
+    세션에 등록된 실행 장치를 직접 들여다본다.
+    글자를 찾는 부분과 읽는 부분 중 하나라도 CPU면 CPU로 본다.
     """
-    for part_name in ("text_det", "text_cls", "text_rec"):
+    found = set()
+    for part_name in ("text_det", "text_rec"):
         part = getattr(engine, part_name, None)
         session = getattr(getattr(part, "session", None), "session", None)
         if session is None or not hasattr(session, "get_providers"):
             continue
-        if "CUDA" not in session.get_providers()[0]:
-            return "CPU"
-    return "GPU"
+        provider = session.get_providers()[0]
+        if "CUDA" in provider:
+            found.add(BACKEND_CUDA)
+        elif "Dml" in provider or "DML" in provider:
+            found.add(BACKEND_DIRECTML)
+        else:
+            found.add(BACKEND_CPU)
+
+    if not found or BACKEND_CPU in found:
+        return BACKEND_CPU
+    return BACKEND_CUDA if BACKEND_CUDA in found else BACKEND_DIRECTML
 
 
 def get_engine(use_gpu: bool):
-    """엔진을 돌려준다. GPU를 쓸 수 없으면 CPU로 자동 전환한다."""
-    want_cuda = bool(use_gpu) and "CUDAExecutionProvider" in ort.get_available_providers()
+    """엔진을 돌려준다.
 
-    if want_cuda not in _engine_cache:
+    이 PC에 설치된 부품을 보고 CUDA / DirectML / CPU 중 알맞은 것을 스스로 고른다.
+    가속을 쓸 수 없으면 CPU로 조용히 넘어간다.
+
+    PDFOCR_FORCE_CPU 값을 1로 두면 그래픽카드가 있어도 CPU만 쓴다.
+    낮은 사양 그래픽카드에서는 CPU가 오히려 빠른 경우가 있어서 준비해 둔 장치다.
+    """
+    if os.environ.get("PDFOCR_FORCE_CPU") == "1":
+        backend = BACKEND_CPU
+    else:
+        backend = active_backend() if use_gpu else BACKEND_CPU
+
+    if backend not in _engine_cache:
         try:
-            engine = _build_engine(want_cuda)
+            engine = _build_engine(backend)
         except Exception:
             # 그래픽카드 쪽 준비가 안 된 경우. CPU로 다시 만든다.
-            if not want_cuda:
+            if backend == BACKEND_CPU:
                 raise
-            want_cuda = False
-            engine = _build_engine(False)
-        _engine_cache[want_cuda] = engine
+            backend = BACKEND_CPU
+            engine = _engine_cache.get(backend) or _build_engine(backend)
+        _engine_cache[backend] = engine
 
-    engine = _engine_cache[want_cuda]
+    engine = _engine_cache[backend]
     return engine, _detect_device(engine)
 
 

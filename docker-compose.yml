@@ -1,0 +1,47 @@
+# =============================================================================
+# PDFOCR 운영 배포 설정 (Unraid)
+#
+# 실행:
+#   docker compose up -d --build
+#
+# 접속:
+#   서버 안에서    http://서버주소:2222
+#   바깥에서       https://pdf.jaehoon.org  (Nginx Proxy Manager가 2222로 넘겨줌)
+# =============================================================================
+
+services:
+  pdfocr:
+    build: .
+    image: web-pdfocr:latest
+    container_name: Web-PDFOCR
+    restart: unless-stopped
+
+    ports:
+      # 바깥 2222 → 컨테이너 2222
+      - "2222:2222"
+
+    volumes:
+      # 스캔저장본과 편집본을 두는 곳.
+      # 서버의 GRM-BOX/PDFOCR 폴더가 컨테이너 안 /data 로 연결된다.
+      #   /data/원본     ← 여기에 PDF를 넣으면 화면에서 골라 변환할 수 있다
+      #   /data/변환완료 ← 변환 결과가 쌓인다
+      - /mnt/user/GRM-BOX/PDFOCR:/data
+
+      # 계정 설정(바꾼 비밀번호)이 담기는 곳.
+      # 이 연결이 없으면 컨테이너를 새로 만들 때마다 비밀번호가 admin으로 돌아간다.
+      - /mnt/user/appdata/Web-PDFOCR/config:/config
+
+    environment:
+      - TZ=Asia/Seoul
+      # 그래픽카드가 느리거나 문제가 있을 때 1로 바꾸면 CPU만 쓴다.
+      - PDFOCR_FORCE_CPU=0
+
+    # 그래픽카드를 컨테이너에 넘겨준다. (Quadro P620)
+    # GPU를 쓰지 않기로 하면 이 deploy 항목을 통째로 지우면 된다.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

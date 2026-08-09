@@ -86,6 +86,23 @@ body {
     margin: 0 auto;
 }
 
+/* 로그인처럼 내용이 적은 화면 */
+.page-narrow {
+    max-width: 420px;
+}
+
+input[type="text"],
+input[type="password"] {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-sm);
+    background: var(--pdfocr-surface);
+    color: var(--pdfocr-text);
+    font-family: inherit;
+    font-size: 14px;
+}
+
 /* ── 머리말 ───────────────────────────────────────────────────────────── */
 .page-head {
     margin-bottom: 28px;
@@ -123,6 +140,100 @@ body {
     margin: 0 0 18px;
     color: var(--pdfocr-text-muted);
     font-size: 13px;
+}
+
+/* ── 머리말 가로 배치 ─────────────────────────────────────────────────── */
+.page-head-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+/* ── 탭 ───────────────────────────────────────────────────────────────── */
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--pdfocr-border);
+    flex-wrap: wrap;
+}
+
+.tab {
+    padding: 9px 14px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--pdfocr-text-muted);
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.tab:hover {
+    color: var(--pdfocr-text);
+}
+
+.tab.is-active {
+    color: var(--pdfocr-accent);
+    border-bottom-color: var(--pdfocr-accent);
+}
+
+/* ── 보관함 목록 ──────────────────────────────────────────────────────── */
+.storage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: 14px;
+}
+
+.storage-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-sm);
+    cursor: pointer;
+}
+
+.storage-item:hover {
+    border-color: var(--pdfocr-accent);
+}
+
+.storage-item.is-picked {
+    border-color: var(--pdfocr-accent);
+    background: var(--pdfocr-surface-sub);
+}
+
+.storage-item input {
+    flex-shrink: 0;
+}
+
+.storage-item-body {
+    min-width: 0;
+}
+
+.storage-item-name {
+    display: block;
+    font-size: 14px;
+    word-break: break-all;
+}
+
+.storage-item-meta {
+    display: block;
+    font-size: 12px;
+    color: var(--pdfocr-text-muted);
+}
+
+/* 불러오는 중임을 알리는 자리표시. 누를 수 있는 것처럼 보이지 않게 한다. */
+.storage-skeleton {
+    height: 44px;
+    border-radius: var(--pdfocr-radius-sm);
+    background: var(--pdfocr-surface-sub);
 }
 
 /* ── 파일 올리는 자리 ─────────────────────────────────────────────────── */

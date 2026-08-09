@@ -1,0 +1,23 @@
+# 이미지 안에 들어갈 필요가 없는 것들
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 작업 파일과 설정 (실제 폴더는 도커 실행 때 바깥과 연결한다)
+uploads/
+outputs/
+storage/
+config/
+*.pdf
+
+# 규정 문서와 비밀 정보
+Rule_PW.txt
+Rule_ToDo.txt
+Rule_ToDo_Done.txt
+Rule_UIUX.txt
+Rule_Project_Etc.txt
+AGENTS.md
+CLAUDE.md
+README.md
