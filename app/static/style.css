@@ -541,9 +541,20 @@ button:disabled {
     color: var(--pdfocr-danger);
 }
 
+.notice-warn {
+    background: var(--pdfocr-warn-bg);
+    color: var(--pdfocr-warn);
+}
+
 .notice-plain {
     background: var(--pdfocr-surface-sub);
     color: var(--pdfocr-text-muted);
+}
+
+/* 글자 파일 단추들을 감싼 상자. 자기 자신은 자리를 차지하지 않고
+   안에 든 단추들이 그대로 단추 줄의 칸이 되게 한다. */
+.export-buttons {
+    display: contents;
 }
 
 .is-hidden {

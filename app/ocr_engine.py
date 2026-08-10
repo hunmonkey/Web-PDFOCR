@@ -18,12 +18,13 @@ PDF OCR 코어 로직 (RapidOCR + PyMuPDF, GPU 가속)
 from __future__ import annotations
 
 import gc
+import math
 import os
 import sysconfig
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, Sequence
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +94,36 @@ REBUILD_JPEG_QUALITY = 85
 # 20쪽마다 정리했을 때 최대 3.1GB까지 치솟아서 5쪽으로 줄였다.
 GC_INTERVAL = 5
 
+# 이미 글자층이 깔린 PDF인지 볼 때 살펴보는 쪽 수와, 글자가 있다고 볼 최소 글자 수.
+# 스캔본에도 쪽 번호 같은 글자가 몇 개 들어 있는 경우가 있어 20자를 기준으로 삼는다.
+TEXT_LAYER_SAMPLE_PAGES = 5
+TEXT_LAYER_MIN_CHARS = 20
+
+# 읽은 글자를 따로 저장할 수 있는 형식들
+EXPORT_TXT = "txt"
+EXPORT_MD = "md"
+EXPORT_DOCX = "docx"
+EXPORT_FORMATS = (EXPORT_TXT, EXPORT_MD, EXPORT_DOCX)
+
+# ── 방향 자동 보정 ──
+# 방향을 가늠할 때는 낮은 해상도로 본다. 어느 쪽이 더 잘 읽히는지만 알면 되기 때문이다.
+ROTATE_PROBE_DPI = 150
+# 방향을 가늠해 볼 쪽 수. 첫 장이 백지일 수 있어 몇 장까지 넘겨 가며 본다.
+ROTATE_PROBE_PAGES = 3
+# 이 정도 글자는 읽혀야 판단할 만한 쪽으로 본다. (점수 × 글자 수의 합)
+ROTATE_MIN_SIGNAL = 15.0
+# 돌린 쪽이 이만큼 더 잘 읽혀야 실제로 돌린다. 애매한 차이로 멀쩡한 문서를
+# 돌려 버리는 일을 막기 위한 여유값이다.
+ROTATE_MIN_GAIN = 1.2
+
+# ── 미세 기울기 보정 ──
+# 이보다 작게 기운 것은 손대지 않는다. 되돌리는 이득보다 다시 그리는 손해가 크다.
+DESKEW_MIN_ANGLE = 0.3
+# 이보다 크게 기울었다고 나오면 잘못 잰 것으로 본다. (90도 방향 문제는 위에서 처리한다)
+DESKEW_MAX_ANGLE = 10.0
+# 기울기를 재려면 최소한 이만큼의 글줄이 필요하다.
+DESKEW_MIN_LINES = 3
+
 
 @dataclass
 class OcrOptions:
@@ -101,6 +132,12 @@ class OcrOptions:
     text_score: float = 0.5      # 이 점수보다 낮게 인식된 글자는 버린다
     mode: str = MODE_KEEP
     use_gpu: bool = True
+    # 읽은 글자를 어떤 형식으로 따로 저장할지. 비어 있으면 저장하지 않는다.
+    export_formats: tuple[str, ...] = ()
+    # 뒤집히거나 옆으로 누운 문서를 90도 단위로 바로 세운다. (화질 손실 없음)
+    auto_rotate: bool = True
+    # 살짝 비뚤어진 쪽을 똑바로 되돌린다. 페이지를 다시 그리므로 화질이 조금 나빠진다.
+    deskew: bool = False
 
 
 @dataclass
@@ -114,6 +151,12 @@ class OcrSummary:
     output_bytes: int = 0
     device: str = BACKEND_CPU    # 실제로 사용한 장치 (CUDA / DirectML / CPU)
     stopped: bool = False        # 사용자가 중지했는지
+    # 쪽마다 읽어 낸 글. 텍스트 내보내기를 고른 경우에만 채운다.
+    pages_text: list[str] = field(default_factory=list)
+    # 방향 자동 보정으로 실제 돌린 각도 (0이면 손대지 않음)
+    rotated_by: int = 0
+    # 미세 기울기 보정을 실제로 적용한 쪽 수
+    deskewed_pages: int = 0
 
 
 @dataclass(frozen=True)
@@ -278,6 +321,199 @@ def _pixmap_to_array(pix) -> np.ndarray:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 이미 글자가 들어 있는 PDF인지 살펴보기
+# ─────────────────────────────────────────────────────────────────────────────
+def document_has_text_layer(doc) -> bool:
+    """열려 있는 PDF에 이미 글자층이 깔려 있는지 알려 준다.
+
+    스캐너 프로그램이 자체 OCR로 만든 PDF를 다시 변환하면 글자가 두 겹으로 얹혀
+    검색 결과가 엉킨다. 그런 파일을 미리 알아채기 위한 확인이다.
+    앞쪽 몇 장만 본다. 전체를 뒤지면 쪽수가 많은 문서에서 느려지기 때문이다.
+    """
+    limit = min(TEXT_LAYER_SAMPLE_PAGES, doc.page_count)
+    for index in range(limit):
+        if len(doc[index].get_text("text").strip()) >= TEXT_LAYER_MIN_CHARS:
+            return True
+    return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 방향 자동 보정 (90도 단위)
+# ─────────────────────────────────────────────────────────────────────────────
+def _reading_signal(ocr_result, text_score: float) -> float:
+    """이 방향으로 얼마나 '똑바로' 읽혔는지를 하나의 숫자로 나타낸다.
+
+    글줄 수만 세면 글자 하나짜리 잡음도 한 줄로 계산된다. 그래서
+    '확신 점수 × 글자 수'를 모두 더해, 길고 자신 있게 읽은 쪽이 높게 나오도록 한다.
+
+    여기에 더해 가로로 누운 글상자만 센다. 글자를 읽는 모델은 세로로 선 글줄을
+    스스로 눕혀서 읽어 내기 때문에, 잘 읽혔는지만 보면 옆으로 누운 문서와 똑바로 선
+    문서를 구분하지 못한다. (실제로 90도 눕힌 시험 문서가 다섯 줄 모두 정확히
+    읽혔다.) 글상자가 가로로 긴지 세로로 긴지를 함께 봐야 방향을 가릴 수 있다.
+    """
+    texts = getattr(ocr_result, "txts", None)
+    scores = getattr(ocr_result, "scores", None)
+    boxes = getattr(ocr_result, "boxes", None)
+    if texts is None or scores is None or boxes is None:
+        return 0.0
+
+    total = 0.0
+    for box, text, score in zip(boxes, texts, scores):
+        if score < text_score:
+            continue
+        xs = [float(point[0]) for point in box]
+        ys = [float(point[1]) for point in box]
+        if (max(xs) - min(xs)) < (max(ys) - min(ys)):
+            continue   # 세로로 선 글줄. 이 방향은 똑바로가 아니다.
+        total += float(score) * len(text.strip())
+    return total
+
+
+def _probe_page(engine, page, text_score: float) -> float:
+    """지금 걸려 있는 방향 그대로 한 쪽을 읽어 보고 점수를 돌려준다."""
+    scale = ROTATE_PROBE_DPI / 72.0
+    pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
+    signal = _reading_signal(engine(_pixmap_to_array(pix)), text_score)
+    del pix
+    return signal
+
+
+def detect_rotation(engine, doc, text_score: float) -> int:
+    """문서를 몇 도 돌려야 가장 잘 읽히는지 알아낸다.
+
+    돌려야 할 각도(0 / 90 / 180 / 270)를 돌려준다. 0이면 손댈 필요가 없다는 뜻이다.
+    글자를 읽는 모델은 거꾸로 된 글줄을 거의 읽지 못하므로, 네 방향을 실제로 읽혀
+    보면 차이가 뚜렷하게 갈린다.
+
+    쪽마다 방향이 다른 문서는 다루지 않는다. 한 번 스캔한 묶음은 방향이 같다는
+    전제이며, 그렇지 않은 문서는 원래 사람이 손봐야 하는 자료다.
+    """
+    for index in range(min(ROTATE_PROBE_PAGES, doc.page_count)):
+        page = doc[index]
+        original = page.rotation
+        signals = {}
+
+        try:
+            for delta in (0, 90, 180, 270):
+                page.set_rotation((original + delta) % 360)
+                signals[delta] = _probe_page(engine, page, text_score)
+        finally:
+            page.set_rotation(original)
+
+        best = max(signals, key=lambda delta: signals[delta])
+        if signals[best] < ROTATE_MIN_SIGNAL:
+            # 백지이거나 글자가 너무 적은 쪽이다. 다음 쪽으로 넘어가 본다.
+            continue
+        if best == 0 or signals[best] < signals[0] * ROTATE_MIN_GAIN:
+            return 0
+        return best
+
+    return 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 미세 기울기 보정
+# ─────────────────────────────────────────────────────────────────────────────
+def estimate_skew(ocr_result) -> float:
+    """읽어 낸 글줄들이 평균 몇 도쯤 비뚤어져 있는지 잰다.
+
+    글상자의 윗변이 이루는 각도를 모두 구한 뒤 가운뎃값을 쓴다. 평균이 아니라
+    가운뎃값을 쓰는 이유는, 도장이나 표 선을 글자로 잘못 잡은 몇 개가 섞여도
+    결과가 끌려가지 않게 하기 위해서다.
+    """
+    boxes = getattr(ocr_result, "boxes", None)
+    if boxes is None:
+        return 0.0
+
+    angles = []
+    for box in boxes:
+        if len(box) < 2:
+            continue
+        (x0, y0), (x1, y1) = box[0][:2], box[1][:2]
+        dx = float(x1) - float(x0)
+        dy = float(y1) - float(y0)
+        if abs(dx) < 1.0:
+            continue
+        angle = math.degrees(math.atan2(dy, dx))
+        if abs(angle) <= DESKEW_MAX_ANGLE:
+            angles.append(angle)
+
+    if len(angles) < DESKEW_MIN_LINES:
+        return 0.0
+
+    angles.sort()
+    return angles[len(angles) // 2]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 읽은 글자를 사람이 읽는 순서로 모으기
+# ─────────────────────────────────────────────────────────────────────────────
+def _page_text_from_boxes(items: Sequence[tuple[float, float, float, str]]) -> str:
+    """한 쪽에서 읽은 글줄들을 위에서 아래로, 왼쪽에서 오른쪽으로 늘어놓는다.
+
+    items는 (왼쪽 x, 가운데 y, 글상자 높이, 글) 묶음이다.
+    OCR은 글줄을 찾은 순서대로 돌려주기 때문에 그대로 이어 붙이면 순서가 뒤죽박죽이 된다.
+    가운데 y가 글자 높이의 절반 안쪽이면 같은 줄로 보고 한 줄로 묶는다.
+    """
+    if not items:
+        return ""
+
+    ordered = sorted(items, key=lambda item: (item[1], item[0]))
+    lines: list[list[tuple[float, float, float, str]]] = [[ordered[0]]]
+
+    for item in ordered[1:]:
+        previous = lines[-1][-1]
+        # 두 글상자 중 낮은 쪽 높이를 기준으로 삼아야, 큰 제목 옆의 작은 글자가
+        # 엉뚱하게 같은 줄로 묶이지 않는다.
+        tolerance = min(previous[2], item[2]) * 0.5
+        if abs(item[1] - previous[1]) <= tolerance:
+            lines[-1].append(item)
+        else:
+            lines.append([item])
+
+    return "\n".join(
+        " ".join(part[3] for part in sorted(line, key=lambda part: part[0]))
+        for line in lines
+    )
+
+
+def _render_export(pages_text: Sequence[str], export_format: str) -> str:
+    """모아 둔 쪽별 글을 고른 형식의 문서 한 덩어리로 만든다."""
+    if export_format == EXPORT_MD:
+        blocks = [
+            f"## {index + 1}쪽\n\n{text}" if text else f"## {index + 1}쪽\n\n_(읽어 낸 글자가 없습니다)_"
+            for index, text in enumerate(pages_text)
+        ]
+        return "\n\n".join(blocks) + "\n"
+
+    blocks = [
+        f"───── {index + 1}쪽 ─────\n{text}"
+        for index, text in enumerate(pages_text)
+    ]
+    return "\n\n".join(blocks) + "\n"
+
+
+def write_text_export(path: Path, pages_text: Sequence[str], export_format: str) -> None:
+    """읽어 낸 글을 고른 형식으로 저장한다.
+
+    docx는 python-docx가 있어야 만들 수 있다. 다른 형식까지 막지 않도록
+    필요한 순간에만 불러온다.
+    """
+    if export_format == EXPORT_DOCX:
+        from docx import Document
+
+        document = Document()
+        for index, text in enumerate(pages_text):
+            document.add_heading(f"{index + 1}쪽", level=2)
+            for line in text.split("\n"):
+                document.add_paragraph(line)
+        document.save(str(path))
+        return
+
+    path.write_text(_render_export(pages_text, export_format), encoding="utf-8")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 투명 글자 얹기
 # ─────────────────────────────────────────────────────────────────────────────
 def _insert_invisible_text(page, box, text: str, scale: float, rotate: int) -> None:
@@ -341,6 +577,11 @@ def run_ocr(
     중지한 경우에는 결과 파일을 만들지 않는다. 절반만 처리된 파일을 완성본으로
     착각하는 일이 없도록 하기 위해서다.
     """
+    if options.deskew and options.mode != MODE_REBUILD:
+        # 기울기를 되돌리려면 페이지를 다시 그려야 하는데, 그러면 '원본 그대로 두기'가
+        # 약속한 무손실 보존이 깨진다. 두 가지를 함께 쓸 수 없는 이유다.
+        raise ValueError("미세 기울기 보정은 '용량 줄이기' 방식에서만 쓸 수 있습니다.")
+
     input_path = Path(input_path)
     output_path = Path(output_path)
     started = time.perf_counter()
@@ -349,6 +590,7 @@ def run_ocr(
     summary = OcrSummary(device=device, input_bytes=input_path.stat().st_size)
 
     rebuild = options.mode == MODE_REBUILD
+    collect_text = bool(options.export_formats)
     scale = options.dpi / 72.0
     matrix = pymupdf.Matrix(scale, scale)
 
@@ -359,17 +601,38 @@ def run_ocr(
     try:
         summary.total_pages = source.page_count
 
+        if options.auto_rotate:
+            summary.rotated_by = detect_rotation(engine, source, options.text_score)
+
         for index in range(source.page_count):
             if should_stop is not None and should_stop():
                 summary.stopped = True
                 break
 
             src_page = source[index]
+            if summary.rotated_by:
+                # 회전값만 바꾼다. 픽셀을 다시 그리지 않으므로 화질이 그대로다.
+                src_page.set_rotation((src_page.rotation + summary.rotated_by) % 360)
+
             pix = src_page.get_pixmap(matrix=matrix)
 
             image = _pixmap_to_array(pix)
             ocr_result = engine(image)
             image = None  # 큰 이미지는 다 쓴 즉시 놓아준다
+
+            if options.deskew:
+                # 기울기는 글줄을 실제로 읽어 봐야 잴 수 있다. 그래서 한 번 읽은 뒤
+                # 비뚤어졌을 때만 그 각도로 다시 그려 한 번 더 읽는다.
+                # 대부분의 쪽은 곧게 들어와 다시 읽지 않는다.
+                angle = estimate_skew(ocr_result)
+                if abs(angle) >= DESKEW_MIN_ANGLE:
+                    pix = src_page.get_pixmap(
+                        matrix=pymupdf.Matrix(scale, scale).prerotate(-angle)
+                    )
+                    image = _pixmap_to_array(pix)
+                    ocr_result = engine(image)
+                    image = None
+                    summary.deskewed_pages += 1
 
             if rebuild:
                 # 이미지를 JPEG로 다시 담아 용량을 줄이고, 그 크기에 맞춘 페이지를 만든다.
@@ -386,6 +649,7 @@ def run_ocr(
             boxes = getattr(ocr_result, "boxes", None)
             texts = getattr(ocr_result, "txts", None)
             scores = getattr(ocr_result, "scores", None)
+            page_items: list[tuple[float, float, float, str]] = []
 
             if boxes is not None and texts is not None:
                 for box, text, score in zip(boxes, texts, scores):
@@ -393,6 +657,17 @@ def run_ocr(
                         continue
                     _insert_invisible_text(page, box, text, scale, rotate)
                     summary.text_lines += 1
+                    if collect_text:
+                        ys = [float(point[1]) for point in box]
+                        page_items.append((
+                            min(float(point[0]) for point in box),
+                            (min(ys) + max(ys)) / 2,
+                            max(ys) - min(ys),
+                            text.strip(),
+                        ))
+
+            if collect_text:
+                summary.pages_text.append(_page_text_from_boxes(page_items))
 
             pix = None
             ocr_result = None
@@ -482,6 +757,7 @@ def build_pdf_from_browser_results(
     output_path = Path(output_path)
     started = time.perf_counter()
     summary = OcrSummary(device=BACKEND_WEBGPU, input_bytes=input_path.stat().st_size)
+    collect_text = bool(options.export_formats)
     source = pymupdf.open(input_path)
 
     try:
@@ -504,6 +780,7 @@ def build_pdf_from_browser_results(
 
             scale_x = page.rect.width / result.render_width
             scale_y = page.rect.height / result.render_height
+            page_items: list[tuple[float, float, float, str]] = []
 
             for line in result.lines:
                 if line.score < options.text_score or not line.text.strip():
@@ -514,6 +791,13 @@ def build_pdf_from_browser_results(
                 rect = pymupdf.Rect(min(xs), min(ys), max(xs), max(ys))
                 _insert_invisible_text_rect(page, rect, line.text, page.rotation)
                 summary.text_lines += 1
+                if collect_text:
+                    page_items.append((
+                        rect.x0, (rect.y0 + rect.y1) / 2, rect.height, line.text.strip(),
+                    ))
+
+            if collect_text:
+                summary.pages_text.append(_page_text_from_boxes(page_items))
 
             summary.done_pages = index + 1
             if on_progress is not None:

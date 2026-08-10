@@ -29,6 +29,15 @@
         modeKeep: document.getElementById("mode-keep"),
         modeRebuild: document.getElementById("mode-rebuild"),
         modeRebuildChoice: document.getElementById("mode-rebuild-choice"),
+        autoRotate: document.getElementById("auto-rotate"),
+        autoRotateChoice: document.getElementById("auto-rotate-choice"),
+        deskew: document.getElementById("deskew"),
+        deskewChoice: document.getElementById("deskew-choice"),
+        correctionNote: document.getElementById("correction-note"),
+        exportFormats: document.querySelectorAll(".export-format"),
+        textLayerWarning: document.getElementById("text-layer-warning"),
+        exportButtons: document.getElementById("export-buttons"),
+        exportError: document.getElementById("export-error"),
         readyHint: document.getElementById("ready-hint"),
         startButton: document.getElementById("start-button"),
         stopButton: document.getElementById("stop-button"),
@@ -344,6 +353,42 @@
         el.modeRebuild.disabled = onBrowser;
         el.modeRebuildChoice.classList.toggle("is-disabled", onBrowser);
         el.modeRebuildChoice.setAttribute("aria-disabled", String(onBrowser));
+        applyCorrectionRule();
+    }
+
+    // ── 비뚤어진 스캔본 바로잡기 규칙 ────────────────────────────────────
+    function applyCorrectionRule() {
+        const onBrowser = selectedProcessor() === "browser";
+        // 미세 기울기 보정은 페이지를 다시 그려야 하므로 '용량 줄이기'에서만 쓸 수 있다.
+        const canDeskew = !onBrowser && el.modeRebuild.checked;
+
+        el.autoRotate.disabled = onBrowser;
+        el.autoRotateChoice.classList.toggle("is-disabled", onBrowser);
+        el.autoRotateChoice.setAttribute("aria-disabled", String(onBrowser));
+
+        el.deskew.disabled = !canDeskew;
+        el.deskewChoice.classList.toggle("is-disabled", !canDeskew);
+        el.deskewChoice.setAttribute("aria-disabled", String(!canDeskew));
+        if (!canDeskew) el.deskew.checked = false;
+
+        if (onBrowser) {
+            el.correctionNote.textContent =
+                "그래픽카드 방식에서는 방향·기울기 보정을 쓸 수 없습니다. " +
+                "쓰시려면 ‘서버에서 읽기’를 골라 주세요.";
+        } else if (!canDeskew) {
+            el.correctionNote.textContent =
+                "‘살짝 기운 것까지 펴기’는 ‘용량 줄이기’를 골라야 켤 수 있습니다. " +
+                "원본을 그대로 두면서 픽셀을 다시 그릴 수는 없기 때문입니다.";
+        } else {
+            el.correctionNote.textContent =
+                "기운 쪽만 골라서 다시 그립니다. 곧게 들어온 쪽은 그대로 둡니다.";
+        }
+    }
+
+    function selectedExportFormats() {
+        return Array.from(el.exportFormats)
+            .filter((box) => box.checked)
+            .map((box) => box.value);
     }
 
     function checkBrowserSupport() {
@@ -371,6 +416,8 @@
 
     el.processorServer.addEventListener("change", applyProcessorModeRule);
     el.processorBrowser.addEventListener("change", applyProcessorModeRule);
+    el.modeKeep.addEventListener("change", applyCorrectionRule);
+    el.modeRebuild.addEventListener("change", applyCorrectionRule);
 
     // ── 고른 파일 표시 ────────────────────────────────────────────────────
     function markReady(label) {
@@ -613,6 +660,8 @@
 
         clearError();
         hide(el.resultCard);
+        hide(el.textLayerWarning);
+        hide(el.exportError);
         closeProgressConnection();
         abortCreateRequest();
         abortBrowserWork();
@@ -625,10 +674,17 @@
         } else {
             form.append("source_path", pickedStored.relative);
         }
+        const exportFormats = selectedExportFormats();
+        const autoRotate = !el.autoRotate.disabled && el.autoRotate.checked;
+        const deskew = !el.deskew.disabled && el.deskew.checked;
+
         form.append("dpi", el.dpi.value);
         form.append("text_score", String(score));
         form.append("mode", document.querySelector('input[name="mode"]:checked').value);
         form.append("processor", processor);
+        form.append("export_formats", exportFormats.join(","));
+        form.append("auto_rotate", String(autoRotate));
+        form.append("deskew", String(deskew));
 
         const requestSignature = JSON.stringify({
             source: pickedFile
@@ -638,6 +694,9 @@
             score,
             mode: document.querySelector('input[name="mode"]:checked').value,
             processor,
+            exportFormats,
+            autoRotate,
+            deskew,
         });
         if (pendingJobRequest && pendingJobRequest.signature !== requestSignature) {
             try {
@@ -701,6 +760,16 @@
         if (pendingJobRequest === request) pendingJobRequest = null;
         currentJobId = job.id;
         currentProcessor = job.processor || processor;
+
+        if (job.has_text_layer) {
+            // 스캐너가 자체 OCR로 만든 파일일 가능성이 높다. 그대로 한 번 더 얹으면
+            // 글자가 두 겹이 되어 검색 결과가 엉킨다.
+            el.textLayerWarning.textContent =
+                "이 PDF에는 이미 글자가 들어 있습니다. 스캐너나 다른 프로그램에서 " +
+                "글자 인식을 한 번 거친 파일로 보입니다. 이대로 변환하면 글자가 두 겹으로 " +
+                "얹혀 검색 결과가 엉킬 수 있으니, 원하지 않으시면 ‘중지’를 눌러 주세요.";
+            show(el.textLayerWarning);
+        }
         el.startButton.textContent = "변환 시작";
         show(el.statusBadge);
         setBadge(el.statusBadge, "실행 중");
@@ -891,6 +960,16 @@
               sub: DEVICE_HINT[result.device] || "" },
         ];
 
+        if (result.rotated_by || result.deskewed_pages) {
+            items.push({
+                label: "바로잡기",
+                value: result.rotated_by ? result.rotated_by + "도 돌림" : "기울기만 폄",
+                sub: result.deskewed_pages
+                    ? "기운 쪽 " + result.deskewed_pages + "쪽을 폈습니다"
+                    : "돌리는 각도만 바꿔 화질은 그대로입니다",
+            });
+        }
+
         el.resultGrid.innerHTML = "";
         items.forEach((item) => {
             const box = document.createElement("div");
@@ -907,9 +986,39 @@
             el.resultGrid.appendChild(box);
         });
 
+        // 함께 만든 글자 파일 내려받기 단추
+        const EXPORT_LABEL = { txt: "글자 파일(txt)", md: "글자 파일(md)", docx: "워드 문서(docx)" };
+        el.exportButtons.innerHTML = "";
+        (result.exports || []).forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "button-sub";
+            button.textContent = (EXPORT_LABEL[item.format] || item.format) + " 내려받기";
+            button.addEventListener("click", () => {
+                if (!currentJobId) return;
+                window.location.href =
+                    "/api/jobs/" + currentJobId + "/download/" + item.format;
+            });
+            el.exportButtons.appendChild(button);
+        });
+
+        if (result.export_error) {
+            el.exportError.textContent =
+                "PDF는 무사히 만들었지만 글자 파일은 저장하지 못했습니다. (" +
+                result.export_error + ")";
+            show(el.exportError);
+        } else {
+            hide(el.exportError);
+        }
+
+        const savedText = (result.exports || []).length
+            ? " 읽어 낸 글자는 " +
+              result.exports.map((item) => item.name).join(", ") + " 로도 저장했습니다."
+            : "";
         el.resultHint.textContent =
             "이제 PDF 안에서 글자를 찾을 수 있습니다. " +
-            "서버의 '" + result.saved_dir + "' 폴더에 " + result.saved_name + " 으로 저장했습니다.";
+            "서버의 '" + result.saved_dir + "' 폴더에 " + result.saved_name +
+            " 으로 저장했습니다." + savedText;
         show(el.resultCard);
     }
 
@@ -940,6 +1049,8 @@
         hide(el.stopButton);
         hide(el.progressCard);
         hide(el.resultCard);
+        hide(el.textLayerWarning);
+        hide(el.exportError);
         clearError();
         el.dropzone.focus();
     });

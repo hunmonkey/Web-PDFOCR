@@ -18,6 +18,7 @@ PDFOCR 웹 서버 (FastAPI)
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import math
 import os
@@ -48,6 +49,7 @@ from starlette.requests import Request
 
 from app import auth, storage
 from app.ocr_engine import (
+    EXPORT_FORMATS,
     MODE_KEEP,
     MODE_REBUILD,
     BrowserOcrLine,
@@ -55,8 +57,10 @@ from app.ocr_engine import (
     OcrOptions,
     OcrSummary,
     build_pdf_from_browser_results,
+    document_has_text_layer,
     render_browser_page,
     run_ocr,
+    write_text_export,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -77,6 +81,13 @@ STATUS_CANCELED = "취소"
 FINISHED_STATUSES = {STATUS_DONE, STATUS_FAILED, STATUS_CANCELED}
 
 ALLOWED_DPI = {150, 200, 300}
+
+# 글자 파일을 내려줄 때 브라우저에 알려 줄 파일 종류
+EXPORT_MEDIA_TYPES = {
+    "txt": "text/plain; charset=utf-8",
+    "md": "text/markdown; charset=utf-8",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 PROCESSOR_SERVER = "server"
 PROCESSOR_BROWSER = "browser"
@@ -116,9 +127,12 @@ class Job:
     processor: str = PROCESSOR_SERVER
     output_path: Optional[Path] = None
     result_reservation: Optional[storage.ReservedResultPath] = None
+    export_paths: dict[str, Path] = field(default_factory=dict)
+    export_error: str = ""
     status: str = STATUS_WAITING
     done_pages: int = 0
     total_pages: int = 0
+    has_text_layer: bool = False
     message: str = "차례를 기다리는 중입니다."
     stop_requested: bool = False
     summary: Optional[OcrSummary] = None
@@ -470,6 +484,33 @@ def _expire_stale_browser_jobs(now: Optional[float] = None) -> int:
     return len(expired)
 
 
+def _save_text_exports(job: Job, summary: OcrSummary) -> None:
+    """읽어 낸 글을 고른 형식으로 결과 PDF 옆에 저장한다.
+
+    PDF는 이미 무사히 저장된 뒤에 부르는 함수다. 그래서 여기서 문제가 생겨도
+    변환 자체를 실패로 돌리지 않고, 화면에 알리기만 한다.
+    """
+    if not job.options.export_formats or job.output_path is None:
+        return
+
+    written: dict[str, Path] = {}
+    try:
+        for export_format in job.options.export_formats:
+            path = storage.reserve_sidecar_path(job.output_path, export_format)
+            written[export_format] = path
+            write_text_export(path, summary.pages_text, export_format)
+    except Exception as exc:
+        # 만들다 만 파일은 남기지 않는다. 반쪽짜리 결과를 완성본으로 오해하지 않도록.
+        for path in written.values():
+            _remove_file(path)
+        with job.lock:
+            job.export_error = f"{type(exc).__name__}: {exc}"
+        return
+
+    with job.lock:
+        job.export_paths = written
+
+
 def _process(job: Job) -> None:
     with job.lock:
         job.status = STATUS_RUNNING
@@ -507,6 +548,7 @@ def _process(job: Job) -> None:
         )
         job.summary = summary
 
+        committed = False
         with job.lock:
             if summary.stopped or job.stop_requested:
                 job.status = STATUS_CANCELED
@@ -517,8 +559,18 @@ def _process(job: Job) -> None:
             else:
                 storage.commit_reserved_result(reservation)
                 job.result_reservation = None
+                committed = True
+
+        if committed:
+            # 글자 파일 저장은 잠금 밖에서 한다. 그동안 진행 상황 조회가 막히지
+            # 않게 하고, 완료를 알리기 전에 내려받을 파일을 모두 갖춰 두기 위해서다.
+            _save_text_exports(job, summary)
+            with job.lock:
                 job.status = STATUS_DONE
-                job.message = "변환이 완료되었습니다."
+                job.message = (
+                    "변환은 끝났지만 글자 파일을 저장하지 못했습니다."
+                    if job.export_error else "변환이 완료되었습니다."
+                )
 
     except Exception as exc:
         with job.lock:
@@ -583,6 +635,7 @@ def _process_browser(job: Job) -> None:
         summary.elapsed = time.perf_counter() - job.started_at
         job.summary = summary
 
+        committed = False
         with job.lock:
             if summary.stopped or job.stop_requested:
                 job.status = STATUS_CANCELED
@@ -593,8 +646,16 @@ def _process_browser(job: Job) -> None:
             else:
                 storage.commit_reserved_result(reservation)
                 job.result_reservation = None
+                committed = True
+
+        if committed:
+            _save_text_exports(job, summary)
+            with job.lock:
                 job.status = STATUS_DONE
-                job.message = "변환이 완료되었습니다."
+                job.message = (
+                    "변환은 끝났지만 글자 파일을 저장하지 못했습니다."
+                    if job.export_error else "변환이 완료되었습니다."
+                )
 
     except Exception as exc:
         with job.lock:
@@ -649,6 +710,14 @@ def _job_payload(job: Job) -> dict:
             # 서버 어디에 저장됐는지 화면에 알려 준다.
             "saved_name": job.output_path.name,
             "saved_dir": str(storage.RESULT_DIR),
+            # 함께 만든 글자 파일들
+            "exports": [
+                {"format": export_format, "name": path.name}
+                for export_format, path in sorted(job.export_paths.items())
+            ],
+            "export_error": job.export_error,
+            "rotated_by": s.rotated_by,
+            "deskewed_pages": s.deskewed_pages,
         }
     return payload
 
@@ -731,6 +800,28 @@ async def _copy_upload(upload: UploadFile, target: Path) -> None:
             output.write(chunk)
 
 
+def _parse_export_formats(raw: str) -> tuple[str, ...]:
+    """화면에서 쉼표로 이어 보낸 글자 파일 형식을 확인해 정리한다."""
+    picked: list[str] = []
+    for item in raw.split(","):
+        name = item.strip().lower()
+        if not name:
+            continue
+        if name not in EXPORT_FORMATS:
+            raise HTTPException(400, "글자 파일 형식 값이 올바르지 않습니다.")
+        if name not in picked:
+            picked.append(name)
+
+    if "docx" in picked and importlib.util.find_spec("docx") is None:
+        # 변환을 다 끝낸 뒤에 실패를 알리면 시간이 아깝다. 시작 전에 막는다.
+        raise HTTPException(
+            400,
+            "이 서버에는 docx를 만드는 부품(python-docx)이 설치되어 있지 않습니다. "
+            "txt나 md를 골라 주세요.",
+        )
+    return tuple(picked)
+
+
 def _created_job_payload(job: Job) -> dict:
     """작업 생성 응답의 기존 모양을 그대로 유지한다."""
     return {
@@ -738,6 +829,7 @@ def _created_job_payload(job: Job) -> dict:
         "processor": job.processor,
         "total_pages": job.total_pages,
         "original_name": job.original_name,
+        "has_text_layer": job.has_text_layer,
     }
 
 
@@ -749,6 +841,11 @@ async def create_job(
     text_score: float = Form(0.5),
     mode: str = Form(MODE_KEEP),
     processor: str = Form(PROCESSOR_SERVER),
+    # 기본값을 Form(...)이 아니라 순수 파이썬 값으로 둔다. 이렇게 해야 이 함수를
+    # 그대로 불러 시험할 때도 Form 객체가 아닌 진짜 기본값이 들어온다.
+    export_formats: Annotated[str, Form()] = "",
+    auto_rotate: Annotated[bool, Form()] = True,
+    deskew: Annotated[bool, Form()] = False,
     request_id: Annotated[str, Form()] = "",
 ) -> dict:
     if dpi not in ALLOWED_DPI:
@@ -761,6 +858,19 @@ async def create_job(
         raise HTTPException(400, "글자를 읽을 장소 값이 올바르지 않습니다.")
     if processor == PROCESSOR_BROWSER and mode != MODE_KEEP:
         raise HTTPException(400, "브라우저 처리는 원본 그대로 두기 방식만 지원합니다.")
+    if processor == PROCESSOR_BROWSER:
+        # 브라우저 방식은 접속한 PC가 글자를 읽으므로 서버 쪽 보정 단계를 거치지 않는다.
+        # 화면에서도 잠가 두지만, 기본값이 켜짐이라 오류로 막지 않고 조용히 끈다.
+        auto_rotate = False
+        deskew = False
+    if deskew and mode != MODE_REBUILD:
+        raise HTTPException(
+            400,
+            "미세 기울기 보정은 '용량 줄이기' 방식에서만 쓸 수 있습니다. "
+            "페이지를 다시 그려야 하기 때문입니다.",
+        )
+
+    picked_formats = _parse_export_formats(export_formats)
     if request_id and not _valid_request_id(request_id):
         raise HTTPException(400, "요청 키는 32자리 소문자 영문·숫자 형식이어야 합니다.")
 
@@ -823,6 +933,9 @@ async def create_job(
                 page_count = doc.page_count
                 if doc.needs_pass:
                     raise HTTPException(400, "암호가 걸린 PDF는 변환할 수 없습니다.")
+                # 이미 글자가 들어 있는 PDF인지도 이때 함께 살펴본다. 막지는 않고
+                # 화면에서 알려 주기만 한다.
+                has_text_layer = document_has_text_layer(doc)
         except HTTPException:
             raise
         except Exception as exc:
@@ -843,9 +956,17 @@ async def create_job(
             id=job_id,
             original_name=original_name,
             input_path=input_path,
-            options=OcrOptions(dpi=dpi, text_score=text_score, mode=mode),
+            options=OcrOptions(
+                dpi=dpi,
+                text_score=text_score,
+                mode=mode,
+                export_formats=picked_formats,
+                auto_rotate=auto_rotate,
+                deskew=deskew,
+            ),
             processor=processor,
             total_pages=page_count,
+            has_text_layer=has_text_layer,
         )
         if processor == PROCESSOR_BROWSER:
             job.status = STATUS_RUNNING
@@ -1345,6 +1466,32 @@ async def download(job_id: str):
     return FileResponse(
         job.output_path,
         media_type="application/pdf",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename*=UTF-8''{quote(download_name)}",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.get("/api/jobs/{job_id}/download/{export_format}")
+async def download_text(job_id: str, export_format: str):
+    """함께 만든 글자 파일(txt / md / docx)을 내려준다."""
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "해당 작업을 찾을 수 없습니다.")
+    if export_format not in EXPORT_FORMATS:
+        raise HTTPException(404, "그런 형식의 글자 파일은 만들지 않습니다.")
+
+    path = job.export_paths.get(export_format)
+    if job.status != STATUS_DONE or path is None or not path.exists():
+        raise HTTPException(409, "아직 내려받을 수 있는 글자 파일이 없습니다.")
+
+    download_name = f"{Path(job.original_name).stem}_Searchable.{export_format}"
+    return FileResponse(
+        path,
+        media_type=EXPORT_MEDIA_TYPES[export_format],
         headers={
             "Content-Disposition":
                 f"attachment; filename*=UTF-8''{quote(download_name)}",

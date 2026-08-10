@@ -26,5 +26,8 @@ python-multipart==0.0.32
 PyMuPDF==1.28.2
 Pillow==12.3.0
 
+# --- 읽은 글자를 docx로 내보내기 ---
+python-docx==1.2.0
+
 # --- OCR 엔진 (실행 부품은 scripts/setup.py 가 따로 설치) ---
 rapidocr==3.9.2

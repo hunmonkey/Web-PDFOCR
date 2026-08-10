@@ -167,6 +167,30 @@ def reserve_result_path(original_name: str) -> ReservedResultPath:
         return ReservedResultPath(final_path=final_path, part_path=part_path)
 
 
+def reserve_sidecar_path(final_pdf_path: Path, extension: str) -> Path:
+    """결과 PDF 옆에 둘 텍스트 파일 이름을 겹치지 않게 예약한다.
+
+    결과 PDF 이름은 이미 겹치지 않게 정해져 있지만, 그 PDF만 지우고 텍스트 파일은
+    남겨 둔 경우가 있을 수 있다. 남의 파일을 말없이 덮어쓰지 않도록 여기서도
+    ``O_CREAT | O_EXCL``로 확인과 생성을 한 동작으로 처리한다.
+    """
+    create_flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    create_flags |= getattr(os, "O_BINARY", 0)
+    stem = final_pdf_path.stem
+    index = 1
+
+    while True:
+        suffix = "" if index == 1 else f"({index})"
+        candidate = final_pdf_path.with_name(f"{stem}{suffix}.{extension}")
+        try:
+            descriptor = os.open(candidate, create_flags, 0o666)
+        except FileExistsError:
+            index += 1
+            continue
+        os.close(descriptor)
+        return candidate
+
+
 def commit_reserved_result(reservation: ReservedResultPath) -> None:
     """완성된 임시 PDF를 예약해 둔 최종 이름으로 원자적으로 교체한다."""
     os.replace(reservation.part_path, reservation.final_path)
