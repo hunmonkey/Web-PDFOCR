@@ -120,6 +120,33 @@ python -m venv .venv
 
 ### 새로 배포하기
 
+내 PC에서 아래 한 줄이면 끝납니다. 서버에 접속해 코드를 받고, 컨테이너를 다시 만들어
+올린 뒤, 실제로 응답하는지까지 확인합니다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\deploy_server.py
+```
+
+바꾸기 전에 서버 상태만 보고 싶다면:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\deploy_server.py --check
+```
+
+`main`이 아닌 다른 가지를 올려 보고 싶다면 `--branch dev` 를 붙입니다.
+
+처음 한 번은 접속 부품을 깔아야 합니다. (배포에만 쓰는 도구라 `requirements.txt`에는
+넣지 않았습니다. 도커 이미지에도 들어가지 않습니다.)
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install paramiko
+```
+
+접속에 필요한 값은 모두 `Rule_PW.txt`에서 읽습니다. 그 파일은 `.gitignore`에 들어 있어
+저장소에 올라가지 않습니다.
+
+서버에 직접 들어가서 하고 싶다면 아래와 같습니다.
+
 ```bash
 cd /mnt/user/appdata/Web-PDFOCR/src
 git pull
