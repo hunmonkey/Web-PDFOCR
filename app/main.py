@@ -72,6 +72,24 @@ UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 storage.ensure_dirs()
 
+
+def _asset_version() -> str:
+    """화면 파일이 바뀌면 함께 달라지는 값.
+
+    이 값을 주소 뒤에 붙여 두면, 새로 배포했을 때 브라우저와 중간 중계 서버가
+    예전 파일을 그대로 내주는 일을 막을 수 있다. 실제로 새 화면을 올린 뒤에도
+    바깥에서는 예전 style.css가 계속 나와서 화면이 깨졌다.
+
+    용량이 큰 vendor 폴더는 보지 않는다. 버전이 고정된 파일이라 바뀌지 않는데
+    매번 훑으면 시작만 느려진다.
+    """
+    newest = 0.0
+    static_dir = BASE_DIR / "static"
+    for path in static_dir.glob("*"):
+        if path.is_file() and path.suffix in {".css", ".js"}:
+            newest = max(newest, path.stat().st_mtime)
+    return str(int(newest))
+
 # 화면에 그대로 보여 줄 상태 이름 (Rule_UIUX.txt 2-1 작업 상태 기준)
 STATUS_WAITING = "대기"
 STATUS_RUNNING = "실행 중"
@@ -243,6 +261,8 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="PDFOCR", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+# 모든 화면에서 {{ asset_version }} 으로 바로 쓸 수 있게 등록해 둔다.
+templates.env.globals["asset_version"] = _asset_version()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
