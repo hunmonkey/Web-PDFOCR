@@ -36,6 +36,36 @@
     --pdfocr-radius-md: 10px;
     --pdfocr-radius-lg: 16px;
 
+    /* ── 크기 체계 ─────────────────────────────────────────────────────
+       크기를 눈대중으로 정하면 나란히 놓인 것들의 높이가 조금씩 어긋나
+       화면이 들쭉날쭉해 보인다. 아래 값만 쓰고 새 숫자를 만들지 않는다.
+       ------------------------------------------------------------------ */
+
+    /* 글자 크기는 네 단계만 쓴다. 더 필요해 보이면 굵기나 색으로 구분한다. */
+    --pdfocr-text-xs: 12px;   /* 보조 설명, 쪽 번호, 도구 이름 */
+    --pdfocr-text-sm: 13px;   /* 설명글 */
+    --pdfocr-text-md: 14px;   /* 본문, 단추, 입력칸 */
+    --pdfocr-text-lg: 16px;   /* 제목 */
+
+    /* 누를 수 있는 것의 높이는 세 단계만 쓴다.
+       ★ 한 줄에 나란히 놓이는 것들은 반드시 같은 단계를 쓴다. */
+    --pdfocr-control-sm: 32px;   /* 띠 안에 들어가는 작은 단추와 입력칸 */
+    --pdfocr-control-md: 38px;   /* 보통 입력칸, 탭, 보조 단추 */
+    --pdfocr-control-lg: 44px;   /* 그 화면의 주요 단추 */
+
+    /* 여백은 4의 배수만 쓴다. */
+    --pdfocr-space-1: 4px;
+    --pdfocr-space-2: 8px;
+    --pdfocr-space-3: 12px;
+    --pdfocr-space-4: 16px;
+    --pdfocr-space-5: 24px;
+
+    /* 가로로 나뉜 칸의 폭과 띠의 높이 */
+    --pdfocr-rail-width: 88px;
+    --pdfocr-thumbs-width: 152px;
+    --pdfocr-panel-width: 340px;
+    --pdfocr-bar-height: 52px;
+
     /* 그림자는 얕고 넓게 한 종류만 */
     --pdfocr-shadow: 0 1px 3px rgba(16, 22, 30, 0.06), 0 8px 24px rgba(16, 22, 30, 0.05);
 
@@ -103,8 +133,12 @@ body.workspace-body {
 
 .workspace {
     display: grid;
-    grid-template-columns: 76px 148px minmax(0, 1fr) 340px;
-    grid-template-rows: 52px minmax(0, 1fr);
+    grid-template-columns:
+        var(--pdfocr-rail-width)
+        var(--pdfocr-thumbs-width)
+        minmax(0, 1fr)
+        var(--pdfocr-panel-width);
+    grid-template-rows: var(--pdfocr-bar-height) minmax(0, 1fr);
     grid-template-areas:
         "appbar appbar appbar appbar"
         "rail   thumbs stage  panel";
@@ -116,8 +150,8 @@ body.workspace-body {
     grid-area: appbar;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 0 16px;
+    gap: var(--pdfocr-space-4);
+    padding: 0 var(--pdfocr-space-4);
     background: var(--pdfocr-surface);
     border-bottom: 1px solid var(--pdfocr-border);
 }
@@ -125,26 +159,26 @@ body.workspace-body {
 .appbar-brand {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--pdfocr-space-2);
     flex-shrink: 0;
 }
 
 .appbar-title {
-    font-size: 16px;
+    font-size: var(--pdfocr-text-lg);
     font-weight: 700;
     letter-spacing: -0.01em;
 }
 
 .appbar-sub {
     color: var(--pdfocr-text-muted);
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
 }
 
 .appbar-file {
     flex: 1;
     min-width: 0;
     text-align: center;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -154,12 +188,15 @@ body.workspace-body {
 .appbar-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--pdfocr-space-3);
     flex-shrink: 0;
 }
 
+/* 위쪽 띠에 놓이는 것도 한 단계로 맞춘다. */
 .appbar-actions button {
-    padding: 6px 12px;
+    height: var(--pdfocr-control-sm);
+    padding: 0 var(--pdfocr-space-3);
+    font-size: var(--pdfocr-text-sm);
 }
 
 /* ── 왼쪽 도구 줄 ─────────────────────────────────────────────────────── */
@@ -167,28 +204,33 @@ body.workspace-body {
     grid-area: rail;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 6px;
+    gap: var(--pdfocr-space-1);
+    padding: var(--pdfocr-space-2);
     background: var(--pdfocr-surface);
     border-right: 1px solid var(--pdfocr-border);
     overflow-y: auto;
 }
 
+/* 도구 하나하나의 높이를 고정한다. 이름 길이에 따라 칸 높이가 달라지면
+   왼쪽 줄 전체가 들쭉날쭉해 보인다. */
 .rail-item {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 10px 4px;
+    justify-content: center;
+    gap: var(--pdfocr-space-1);
+    height: 64px;
+    padding: 0 var(--pdfocr-space-1);
     border: none;
     border-radius: var(--pdfocr-radius-sm);
     background: none;
     color: var(--pdfocr-text-muted);
-    font-size: 11px;
+    font-size: var(--pdfocr-text-xs);
     font-weight: 600;
-    line-height: 1.3;
+    line-height: 1.2;
     text-align: center;
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .rail-item svg {
@@ -218,16 +260,16 @@ body.workspace-body {
 /* ── 쪽 목록 ──────────────────────────────────────────────────────────── */
 .thumbs {
     grid-area: thumbs;
-    padding: 12px 10px;
+    padding: var(--pdfocr-space-3);
     background: var(--pdfocr-surface);
     border-right: 1px solid var(--pdfocr-border);
     overflow-y: auto;
 }
 
 .thumbs-empty {
-    margin: 20px 4px;
+    margin: var(--pdfocr-space-5) 0;
     color: var(--pdfocr-text-muted);
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
     text-align: center;
     line-height: 1.6;
 }
@@ -235,13 +277,16 @@ body.workspace-body {
 .thumbs-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--pdfocr-space-3);
 }
 
+/* 쪽 하나. 높이를 내용에 맡기지 않고 종이 비율로 고정해, 아직 그리지 않은
+   쪽과 다 그린 쪽의 크기가 같게 한다. */
 .thumb {
     display: block;
     width: 100%;
-    padding: 4px;
+    height: auto;
+    padding: var(--pdfocr-space-1);
     border: 1px solid transparent;
     border-radius: var(--pdfocr-radius-sm);
     background: none;
@@ -267,9 +312,9 @@ body.workspace-body {
 
 .thumb-label {
     display: block;
-    margin-top: 3px;
+    margin-top: var(--pdfocr-space-1);
     color: var(--pdfocr-text-muted);
-    font-size: 11px;
+    font-size: var(--pdfocr-text-xs);
     font-weight: 600;
     text-align: center;
 }
@@ -291,63 +336,67 @@ body.workspace-body {
     background: var(--pdfocr-stage);
 }
 
+/* 문서 위쪽 띠.
+   ★ 이 줄에 놓이는 것은 단추든 입력칸이든 모두 같은 높이(control-sm)를 쓴다.
+   높이가 몇 픽셀씩만 달라도 줄이 흐트러져 보인다. */
 .stage-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 6px 12px;
+    gap: var(--pdfocr-space-3);
+    height: var(--pdfocr-bar-height);
+    padding: 0 var(--pdfocr-space-3);
     background: var(--pdfocr-surface);
     border-bottom: 1px solid var(--pdfocr-border);
-    flex-wrap: wrap;
 }
 
 .stage-nav,
 .stage-zoom {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pdfocr-space-1);
 }
 
 .stage-page {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pdfocr-space-1);
+    margin: 0 var(--pdfocr-space-1);
     color: var(--pdfocr-text-muted);
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
     font-variant-numeric: tabular-nums;
 }
 
-.stage-page input {
-    width: 52px;
-    max-width: 52px;
-    padding: 4px 6px;
+/* 아래쪽 입력칸 공통 규칙(38px)에 밀리지 않도록 이름을 하나 더 붙여 둔다.
+   이 칸은 문서 위쪽 띠 안에 있으므로 옆 단추들과 같은 32px이어야 한다. */
+.stage-bar .stage-page input {
+    width: 48px;
+    max-width: 48px;
+    height: var(--pdfocr-control-sm);
+    padding: 0 var(--pdfocr-space-1);
     text-align: center;
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
 }
 
 .stage-zoom-value {
-    min-width: 52px;
+    min-width: 48px;
     color: var(--pdfocr-text-muted);
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
     font-variant-numeric: tabular-nums;
     text-align: center;
 }
 
-.stage-zoom .button-sub {
-    padding: 5px 10px;
-    font-size: 13px;
+.stage-bar .button-sub {
+    height: var(--pdfocr-control-sm);
+    padding: 0 var(--pdfocr-space-3);
+    font-size: var(--pdfocr-text-sm);
 }
 
 .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: var(--pdfocr-control-sm);
+    height: var(--pdfocr-control-sm);
     padding: 0;
     border: 1px solid var(--pdfocr-border);
-    border-radius: var(--pdfocr-radius-sm);
     background: var(--pdfocr-surface);
     color: var(--pdfocr-text);
 }
@@ -386,7 +435,7 @@ body.workspace-body {
 .stage-view .dropzone {
     align-self: center;
     max-width: 440px;
-    padding: 48px 32px;
+    padding: var(--pdfocr-space-5);
     background: var(--pdfocr-surface);
 }
 
@@ -394,7 +443,7 @@ body.workspace-body {
     display: block;
     width: 40px;
     height: 40px;
-    margin: 0 auto 12px;
+    margin: 0 auto var(--pdfocr-space-3);
     fill: none;
     stroke: currentColor;
     stroke-width: 1.5;
@@ -437,7 +486,7 @@ body.workspace-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 18px 18px 8px;
+    padding: var(--pdfocr-space-4);
 }
 
 .tool[hidden] {
@@ -445,76 +494,106 @@ body.workspace-body {
 }
 
 .tool h2 {
-    margin: 0 0 4px;
-    font-size: 15px;
-    font-weight: 600;
+    margin: 0 0 var(--pdfocr-space-1);
+    font-size: var(--pdfocr-text-md);
+    font-weight: 700;
 }
 
 .tool-hint {
-    margin: 0 0 14px;
+    margin: 0 0 var(--pdfocr-space-4);
     color: var(--pdfocr-text-muted);
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
 }
 
 .panel-foot {
     flex-shrink: 0;
-    padding: 14px 18px 18px;
+    padding: var(--pdfocr-space-4);
     border-top: 1px solid var(--pdfocr-border);
-    max-height: 60%;
+    max-height: 72%;
     overflow-y: auto;
+}
+
+/* 저장 위치처럼 긴 경로가 칸을 밀고 나가지 않게 한다. */
+#result-hint {
+    word-break: break-all;
 }
 
 .panel-foot .notice {
     margin-top: 0;
-    margin-bottom: 12px;
+    margin-bottom: var(--pdfocr-space-3);
 }
 
 .panel-foot .tool-hint {
-    margin-bottom: 10px;
+    margin-bottom: var(--pdfocr-space-3);
 }
 
 .full {
-    display: block;
+    display: flex;
     width: 100%;
 }
 
 .full + .full {
-    margin-top: 8px;
+    margin-top: var(--pdfocr-space-2);
 }
 
-.progress {
-    margin-bottom: 14px;
+/* 그 화면에서 할 일이 하나뿐인 주요 단추는 한 단계 크게 둔다. */
+#start-button {
+    height: var(--pdfocr-control-lg);
+    font-size: var(--pdfocr-text-md);
 }
 
+.progress,
 .result {
-    margin-bottom: 14px;
+    margin-bottom: var(--pdfocr-space-4);
 }
 
 .result h3 {
-    margin: 0 0 10px;
-    font-size: 14px;
-    font-weight: 600;
+    margin: 0 0 var(--pdfocr-space-3);
+    font-size: var(--pdfocr-text-md);
+    font-weight: 700;
 }
 
+/* 결과 항목은 두 칸으로 고정한다. 칸 너비에 맡기면 항목 수에 따라 한 줄에
+   한 개만 남는 등 줄마다 개수가 달라져 어수선해 보인다. */
 .panel .result-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px;
-    margin: 0 0 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--pdfocr-space-2);
+    margin: 0 0 var(--pdfocr-space-3);
 }
 
 .panel .result-item {
-    padding: 10px;
+    padding: var(--pdfocr-space-3);
 }
 
 .panel .result-item dd {
-    font-size: 15px;
+    font-size: var(--pdfocr-text-md);
+}
+
+.panel .result-item dt {
+    font-size: var(--pdfocr-text-xs);
+}
+
+/* 결과 아래 단추들은 폭을 반씩 나눠 가지런히 놓는다. */
+.result .button-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--pdfocr-space-2);
+}
+
+.result .button-row button {
+    width: 100%;
+    padding: 0 var(--pdfocr-space-2);
+    font-size: var(--pdfocr-text-sm);
 }
 
 /* ── 좁은 화면 ────────────────────────────────────────────────────────── */
 /* 옆으로 늘어놓을 자리가 없으면 위아래로 쌓는다. 가로 스크롤은 만들지 않는다. */
 @media (max-width: 1100px) {
     .workspace {
-        grid-template-columns: 68px minmax(0, 1fr) 300px;
+        grid-template-columns:
+            var(--pdfocr-rail-width)
+            minmax(0, 1fr)
+            var(--pdfocr-panel-width);
         grid-template-areas:
             "appbar appbar appbar"
             "rail   stage  panel";
@@ -551,7 +630,11 @@ body.workspace-body {
 
     .rail-item {
         flex: 1 0 auto;
-        min-width: 68px;
+        /* 가로로 눕히면 다섯 개가 한 줄에 들어가야 한다. 넓을 때 쓰는 폭을
+           그대로 두면 마지막 '진단'이 잘려 옆으로 밀어야 보인다. */
+        min-width: 0;
+        flex: 1 1 0;
+        height: 56px;
     }
 
     .rail-gap {
@@ -586,13 +669,14 @@ body.workspace-body {
 input[type="text"],
 input[type="password"] {
     width: 100%;
-    padding: 9px 12px;
+    height: var(--pdfocr-control-md);
+    padding: 0 var(--pdfocr-space-3);
     border: 1px solid var(--pdfocr-border);
     border-radius: var(--pdfocr-radius-sm);
     background: var(--pdfocr-surface);
     color: var(--pdfocr-text);
     font-family: inherit;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
 }
 
 /* ── 머리말 ───────────────────────────────────────────────────────────── */
@@ -646,21 +730,22 @@ input[type="password"] {
 /* ── 탭 ───────────────────────────────────────────────────────────────── */
 .tabs {
     display: flex;
-    gap: 4px;
-    margin-bottom: 16px;
+    gap: var(--pdfocr-space-1);
+    margin-bottom: var(--pdfocr-space-4);
     border-bottom: 1px solid var(--pdfocr-border);
     flex-wrap: wrap;
 }
 
 .tab {
-    padding: 9px 14px;
+    height: var(--pdfocr-control-md);
+    padding: 0 var(--pdfocr-space-3);
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
     border-radius: 0;
     color: var(--pdfocr-text-muted);
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
 }
 
 .tab:hover {
@@ -676,17 +761,18 @@ input[type="password"] {
 .storage-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--pdfocr-space-2);
     max-height: 320px;
     overflow-y: auto;
-    margin-bottom: 14px;
+    margin-bottom: var(--pdfocr-space-3);
 }
 
 .storage-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: var(--pdfocr-space-3);
+    min-height: var(--pdfocr-control-lg);
+    padding: var(--pdfocr-space-2) var(--pdfocr-space-3);
     border: 1px solid var(--pdfocr-border);
     border-radius: var(--pdfocr-radius-sm);
     cursor: pointer;
@@ -711,19 +797,19 @@ input[type="password"] {
 
 .storage-item-name {
     display: block;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
     word-break: break-all;
 }
 
 .storage-item-meta {
     display: block;
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
     color: var(--pdfocr-text-muted);
 }
 
 /* 불러오는 중임을 알리는 자리표시. 누를 수 있는 것처럼 보이지 않게 한다. */
 .storage-skeleton {
-    height: 44px;
+    height: var(--pdfocr-control-lg);
     border-radius: var(--pdfocr-radius-sm);
     background: var(--pdfocr-surface-sub);
 }
@@ -755,8 +841,8 @@ input[type="password"] {
 .dropzone strong {
     display: block;
     color: var(--pdfocr-text);
-    font-size: 15px;
-    margin-bottom: 4px;
+    font-size: var(--pdfocr-text-md);
+    margin-bottom: var(--pdfocr-space-1);
 }
 
 .picked-file {
@@ -775,7 +861,7 @@ input[type="password"] {
 
 /* ── 설정 ─────────────────────────────────────────────────────────────── */
 .field {
-    margin-bottom: 22px;
+    margin-bottom: var(--pdfocr-space-5);
 }
 
 .field:last-child {
@@ -786,27 +872,28 @@ input[type="password"] {
 .field > .field-title {
     display: block;
     font-weight: 600;
-    font-size: 14px;
-    margin-bottom: 6px;
+    font-size: var(--pdfocr-text-md);
+    margin-bottom: var(--pdfocr-space-2);
 }
 
 .field-desc {
-    margin: 0 0 10px;
+    margin: 0 0 var(--pdfocr-space-2);
     color: var(--pdfocr-text-muted);
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
 }
 
 select,
 input[type="number"] {
     width: 100%;
     max-width: 320px;
-    padding: 9px 12px;
+    height: var(--pdfocr-control-md);
+    padding: 0 var(--pdfocr-space-3);
     border: 1px solid var(--pdfocr-border);
     border-radius: var(--pdfocr-radius-sm);
     background: var(--pdfocr-surface);
     color: var(--pdfocr-text);
     font-family: inherit;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
 }
 
 select:focus-visible,
@@ -822,12 +909,12 @@ select:disabled {
 
 .choice {
     display: flex;
-    gap: 10px;
+    gap: var(--pdfocr-space-3);
     align-items: flex-start;
-    padding: 12px 14px;
+    padding: var(--pdfocr-space-3);
     border: 1px solid var(--pdfocr-border);
     border-radius: var(--pdfocr-radius-sm);
-    margin-bottom: 8px;
+    margin-bottom: var(--pdfocr-space-2);
     cursor: pointer;
 }
 
@@ -859,13 +946,13 @@ select:disabled {
 
 .choice-text strong {
     display: block;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
     font-weight: 600;
 }
 
 .choice-text span {
     color: var(--pdfocr-text-muted);
-    font-size: 13px;
+    font-size: var(--pdfocr-text-sm);
 }
 
 .processor-note {
@@ -876,17 +963,22 @@ select:disabled {
 .button-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--pdfocr-space-3);
     align-items: center;
 }
 
 button {
-    padding: 10px 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--pdfocr-control-md);
+    padding: 0 var(--pdfocr-space-4);
     border-radius: var(--pdfocr-radius-sm);
     border: 1px solid transparent;
     font-family: inherit;
-    font-size: 14px;
+    font-size: var(--pdfocr-text-md);
     font-weight: 600;
+    line-height: 1;
     cursor: pointer;
     transition: background-color var(--pdfocr-motion);
 }
@@ -923,9 +1015,9 @@ button:disabled {
 /* ── 상태 배지 ────────────────────────────────────────────────────────── */
 .badge {
     display: inline-block;
-    padding: 3px 10px;
+    padding: 3px var(--pdfocr-space-3);
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
     font-weight: 600;
 }
 
@@ -955,8 +1047,8 @@ button:disabled {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: var(--pdfocr-space-3);
+    margin-bottom: var(--pdfocr-space-3);
 }
 
 .progress-percent {
@@ -981,29 +1073,29 @@ button:disabled {
 }
 
 .progress-message {
-    margin: 12px 0 0;
+    margin: var(--pdfocr-space-3) 0 0;
     color: var(--pdfocr-text-muted);
-    font-size: 14px;
+    font-size: var(--pdfocr-text-sm);
 }
 
 /* ── 결과 ─────────────────────────────────────────────────────────────── */
 .result-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
-    margin: 4px 0 20px;
+    gap: var(--pdfocr-space-3);
+    margin: var(--pdfocr-space-1) 0 var(--pdfocr-space-5);
 }
 
 .result-item {
-    padding: 14px;
+    padding: var(--pdfocr-space-4);
     background: var(--pdfocr-surface-sub);
     border-radius: var(--pdfocr-radius-sm);
 }
 
 .result-item dt {
-    margin: 0 0 4px;
+    margin: 0 0 var(--pdfocr-space-1);
     color: var(--pdfocr-text-muted);
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
 }
 
 .result-item dd {
@@ -1015,17 +1107,17 @@ button:disabled {
 
 .result-item .sub {
     display: block;
-    font-size: 12px;
+    font-size: var(--pdfocr-text-xs);
     font-weight: 400;
     color: var(--pdfocr-text-muted);
 }
 
 /* ── 알림 ─────────────────────────────────────────────────────────────── */
 .notice {
-    padding: 12px 14px;
+    padding: var(--pdfocr-space-3);
     border-radius: var(--pdfocr-radius-sm);
-    font-size: 14px;
-    margin-top: 14px;
+    font-size: var(--pdfocr-text-sm);
+    margin-top: var(--pdfocr-space-3);
 }
 
 .notice-error {

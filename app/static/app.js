@@ -1036,7 +1036,8 @@
         });
 
         // 함께 만든 글자 파일 내려받기 단추
-        const EXPORT_LABEL = { txt: "글자 파일(txt)", md: "글자 파일(md)", docx: "워드 문서(docx)" };
+        // 단추 글자는 짧게 둔다. 길면 두 줄로 접혀 옆 단추와 어긋나 보인다.
+        const EXPORT_LABEL = { txt: "txt", md: "md", docx: "워드" };
         el.exportButtons.innerHTML = "";
         (result.exports || []).forEach((item) => {
             const button = document.createElement("button");
@@ -1060,14 +1061,24 @@
             hide(el.exportError);
         }
 
+        // 저장 위치는 폴더 이름만 보여 준다. 서버의 전체 경로를 그대로 적으면
+        // 여러 줄을 차지해 정작 눌러야 할 단추가 밀려난다. 전체 경로는 마우스를
+        // 올렸을 때 보이게 둔다.
+        const savedDir = String(result.saved_dir || "");
+        const folder = savedDir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || savedDir;
         const savedText = (result.exports || []).length
-            ? " 읽어 낸 글자는 " +
-              result.exports.map((item) => item.name).join(", ") + " 로도 저장했습니다."
+            ? " 글자 파일도 함께 만들었습니다."
             : "";
         el.resultHint.textContent =
-            "이제 PDF 안에서 글자를 찾을 수 있습니다. " +
-            "서버의 '" + result.saved_dir + "' 폴더에 " + result.saved_name +
-            " 으로 저장했습니다." + savedText;
+            "이제 PDF 안에서 글자를 찾을 수 있습니다. 서버의 '" + folder + "' 폴더에 " +
+            result.saved_name + " 으로 저장했습니다." + savedText;
+        el.resultHint.title = savedDir;
+        // 결과 카드에 성공 표시와 숫자가 모두 들어 있으므로 진행률은 치운다.
+        // 이미 끝난 뒤라 '변환 시작'과 그 안내도 필요 없다. 남겨 두면 아래쪽
+        // '다른 파일 변환하기'가 화면 밖으로 밀려나 스크롤해야 보인다.
+        hide(el.progressCard);
+        hide(el.startButton);
+        hide(el.readyHint);
         show(el.resultCard);
         show(el.resetButton);
 
@@ -1100,6 +1111,8 @@
         });
         el.pickedFile.textContent = "";
         el.startButton.disabled = true;
+        show(el.startButton);
+        show(el.readyHint);
         el.readyHint.textContent = "파일을 고르면 시작할 수 있습니다.";
         hide(el.statusBadge);
         hide(el.stopButton);
