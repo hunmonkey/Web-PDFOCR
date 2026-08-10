@@ -66,6 +66,14 @@ COPY scripts ./scripts
 # 위 단계에서 만든 공식 PaddleOCR.js 브라우저 묶음만 가져온다.
 COPY --from=browser-build /browser/dist/paddleocr-browser.mjs ./app/static/vendor/paddleocr-browser.mjs
 
+# 화면에서 PDF를 보여 주는 데 쓰는 pdf.js. 위 단계에서 npm이 잠금 파일에 적힌 정확한
+# 버전으로 받아 둔 것을 그대로 가져온다. 인터넷에서 따로 받지 않으므로 언제 다시
+# 만들어도 같은 파일이 들어간다.
+COPY --from=browser-build /browser/node_modules/pdfjs-dist/build/pdf.min.mjs ./app/static/vendor/pdf.min.mjs
+COPY --from=browser-build /browser/node_modules/pdfjs-dist/build/pdf.worker.min.mjs ./app/static/vendor/pdf.worker.min.mjs
+# 한글·한자 글꼴 대응표. 없으면 한국어 글꼴이 들어간 PDF에서 글꼴 경고가 난다.
+COPY --from=browser-build /browser/node_modules/pdfjs-dist/cmaps ./app/static/vendor/cmaps
+
 # 브라우저가 그래픽카드로 계산할 때 쓰는 실행 파일과 OCR 모델을 받아 둔다.
 # gpu-test는 Asyncify를, PaddleOCR.js 묶음은 JSEP를 요구하므로 두 쌍을 모두 보관한다.
 # 모델은 받은 뒤 SHA-256 지문을 대조해 전송 중 망가진 파일이 이미지에 들어가지 않게 한다.

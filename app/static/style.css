@@ -8,6 +8,8 @@
     --pdfocr-bg: #f6f7f9;
     --pdfocr-surface: #ffffff;
     --pdfocr-surface-sub: #f0f2f5;
+    /* 문서를 올려 두는 바닥. 종이(흰색)가 떠 보이도록 배경보다 한 단계 어둡게 둔다. */
+    --pdfocr-stage: #e3e6ea;
 
     /* 2. 글자색과 선색 */
     --pdfocr-text: #1c1f23;
@@ -45,6 +47,7 @@
         --pdfocr-bg: #15181c;
         --pdfocr-surface: #1e2227;
         --pdfocr-surface-sub: #262b31;
+        --pdfocr-stage: #0e1013;
 
         --pdfocr-text: #e9ecef;
         --pdfocr-text-muted: #a2abb5;
@@ -84,6 +87,495 @@ body {
 .page {
     max-width: 720px;
     margin: 0 auto;
+}
+
+/* =========================================================================
+   작업 화면 배치
+   위쪽 띠 / 왼쪽 도구 줄 / 쪽 목록 / 문서 보기 / 오른쪽 설정 패널로 나눈다.
+   화면을 벗어나는 스크롤은 각 칸이 따로 갖는다. 그래야 설정을 보려고 문서를
+   내리거나, 문서를 보려고 설정을 내리는 일이 없다.
+   ========================================================================= */
+body.workspace-body {
+    padding: 0;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.workspace {
+    display: grid;
+    grid-template-columns: 76px 148px minmax(0, 1fr) 340px;
+    grid-template-rows: 52px minmax(0, 1fr);
+    grid-template-areas:
+        "appbar appbar appbar appbar"
+        "rail   thumbs stage  panel";
+    height: 100dvh;
+}
+
+/* ── 위쪽 띠 ──────────────────────────────────────────────────────────── */
+.appbar {
+    grid-area: appbar;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    background: var(--pdfocr-surface);
+    border-bottom: 1px solid var(--pdfocr-border);
+}
+
+.appbar-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.appbar-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.appbar-sub {
+    color: var(--pdfocr-text-muted);
+    font-size: 12px;
+}
+
+.appbar-file {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.appbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.appbar-actions button {
+    padding: 6px 12px;
+}
+
+/* ── 왼쪽 도구 줄 ─────────────────────────────────────────────────────── */
+.rail {
+    grid-area: rail;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 6px;
+    background: var(--pdfocr-surface);
+    border-right: 1px solid var(--pdfocr-border);
+    overflow-y: auto;
+}
+
+.rail-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 4px;
+    border: none;
+    border-radius: var(--pdfocr-radius-sm);
+    background: none;
+    color: var(--pdfocr-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    text-decoration: none;
+}
+
+.rail-item svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.rail-item:hover {
+    background: var(--pdfocr-surface-sub);
+    color: var(--pdfocr-text);
+}
+
+.rail-item.is-active {
+    background: var(--pdfocr-surface-sub);
+    color: var(--pdfocr-accent);
+}
+
+.rail-gap {
+    flex: 1;
+}
+
+/* ── 쪽 목록 ──────────────────────────────────────────────────────────── */
+.thumbs {
+    grid-area: thumbs;
+    padding: 12px 10px;
+    background: var(--pdfocr-surface);
+    border-right: 1px solid var(--pdfocr-border);
+    overflow-y: auto;
+}
+
+.thumbs-empty {
+    margin: 20px 4px;
+    color: var(--pdfocr-text-muted);
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.6;
+}
+
+.thumbs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.thumb {
+    display: block;
+    width: 100%;
+    padding: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--pdfocr-radius-sm);
+    background: none;
+    cursor: pointer;
+}
+
+.thumb canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: 2px;
+    background: #ffffff;
+}
+
+/* 아직 그리지 않은 쪽의 자리표시. 내용이 도착해도 화면이 튀지 않게 자리를 잡아 둔다. */
+.thumb-hold {
+    width: 100%;
+    aspect-ratio: 1 / 1.414;
+    border-radius: 2px;
+    background: var(--pdfocr-surface-sub);
+}
+
+.thumb-label {
+    display: block;
+    margin-top: 3px;
+    color: var(--pdfocr-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.thumb.is-current {
+    border-color: var(--pdfocr-accent);
+}
+
+.thumb.is-current .thumb-label {
+    color: var(--pdfocr-accent);
+}
+
+/* ── 문서 보기 ────────────────────────────────────────────────────────── */
+.stage {
+    grid-area: stage;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--pdfocr-stage);
+}
+
+.stage-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 12px;
+    background: var(--pdfocr-surface);
+    border-bottom: 1px solid var(--pdfocr-border);
+    flex-wrap: wrap;
+}
+
+.stage-nav,
+.stage-zoom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stage-page {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.stage-page input {
+    width: 52px;
+    max-width: 52px;
+    padding: 4px 6px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.stage-zoom-value {
+    min-width: 52px;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.stage-zoom .button-sub {
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--pdfocr-border);
+    border-radius: var(--pdfocr-radius-sm);
+    background: var(--pdfocr-surface);
+    color: var(--pdfocr-text);
+}
+
+.icon-button svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.icon-button:hover:not(:disabled) {
+    background: var(--pdfocr-surface-sub);
+}
+
+.stage-view {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    border: 2px solid transparent;
+}
+
+/* 파일을 끌고 들어왔을 때. 문서를 이미 열어 둔 뒤에도 받을 수 있음을 알린다. */
+.stage-view.is-over {
+    border-color: var(--pdfocr-accent);
+}
+
+/* 문서가 아직 없을 때 보이는 넓은 드롭 영역 */
+.stage-view .dropzone {
+    align-self: center;
+    max-width: 440px;
+    padding: 48px 32px;
+    background: var(--pdfocr-surface);
+}
+
+.dropzone-icon {
+    display: block;
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* 화면에 뜬 종이 한 장 */
+.paper {
+    box-shadow: var(--pdfocr-shadow);
+    background: #ffffff;
+    line-height: 0;
+}
+
+.paper canvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.stage-note {
+    align-self: center;
+    margin: 0;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* ── 오른쪽 설정 패널 ─────────────────────────────────────────────────── */
+.panel {
+    grid-area: panel;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--pdfocr-surface);
+    border-left: 1px solid var(--pdfocr-border);
+}
+
+.tool {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 18px 8px;
+}
+
+.tool[hidden] {
+    display: none;
+}
+
+.tool h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.tool-hint {
+    margin: 0 0 14px;
+    color: var(--pdfocr-text-muted);
+    font-size: 13px;
+}
+
+.panel-foot {
+    flex-shrink: 0;
+    padding: 14px 18px 18px;
+    border-top: 1px solid var(--pdfocr-border);
+    max-height: 60%;
+    overflow-y: auto;
+}
+
+.panel-foot .notice {
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+.panel-foot .tool-hint {
+    margin-bottom: 10px;
+}
+
+.full {
+    display: block;
+    width: 100%;
+}
+
+.full + .full {
+    margin-top: 8px;
+}
+
+.progress {
+    margin-bottom: 14px;
+}
+
+.result {
+    margin-bottom: 14px;
+}
+
+.result h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.panel .result-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin: 0 0 12px;
+}
+
+.panel .result-item {
+    padding: 10px;
+}
+
+.panel .result-item dd {
+    font-size: 15px;
+}
+
+/* ── 좁은 화면 ────────────────────────────────────────────────────────── */
+/* 옆으로 늘어놓을 자리가 없으면 위아래로 쌓는다. 가로 스크롤은 만들지 않는다. */
+@media (max-width: 1100px) {
+    .workspace {
+        grid-template-columns: 68px minmax(0, 1fr) 300px;
+        grid-template-areas:
+            "appbar appbar appbar"
+            "rail   stage  panel";
+    }
+
+    .thumbs {
+        display: none;
+    }
+}
+
+@media (max-width: 860px) {
+    body.workspace-body {
+        height: auto;
+        overflow: auto;
+    }
+
+    .workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto auto;
+        grid-template-areas:
+            "appbar"
+            "rail"
+            "stage"
+            "panel";
+        height: auto;
+    }
+
+    .rail {
+        flex-direction: row;
+        border-right: none;
+        border-bottom: 1px solid var(--pdfocr-border);
+        overflow-x: auto;
+    }
+
+    .rail-item {
+        flex: 1 0 auto;
+        min-width: 68px;
+    }
+
+    .rail-gap {
+        display: none;
+    }
+
+    .stage {
+        min-height: 52vh;
+    }
+
+    .panel {
+        border-left: none;
+        border-top: 1px solid var(--pdfocr-border);
+    }
+
+    .tool,
+    .panel-foot {
+        max-height: none;
+        overflow-y: visible;
+    }
+
+    .appbar-sub {
+        display: none;
+    }
 }
 
 /* 로그인처럼 내용이 적은 화면 */

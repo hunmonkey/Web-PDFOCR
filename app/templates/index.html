@@ -6,147 +6,255 @@
     <title>PDFOCR - 검색 가능한 PDF 만들기</title>
     <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-<div class="page">
+<body class="workspace-body">
 
-    <header class="page-head page-head-row">
-        <div>
-            <h1>검색 가능한 PDF 만들기</h1>
-            <p>스캔한 PDF에서 한글과 영문을 읽어, 글자를 찾을 수 있는 PDF로 바꿉니다.</p>
+<div class="workspace">
+
+    <!-- 위쪽 띠 ------------------------------------------------------------->
+    <header class="appbar">
+        <div class="appbar-brand">
+            <span class="appbar-title">PDFOCR</span>
+            <span class="appbar-sub">검색 가능한 PDF 만들기</span>
         </div>
-        <button type="button" class="button-sub" id="logout-button">로그아웃</button>
+
+        <div class="appbar-file" id="picked-file" aria-live="polite"></div>
+
+        <div class="appbar-actions">
+            <span class="badge badge-waiting is-hidden" id="status-badge">대기</span>
+            <button type="button" class="button-sub" id="logout-button">로그아웃</button>
+        </div>
     </header>
 
-    <!-- 1. 파일 고르기 ------------------------------------------------------->
-    <section class="card">
-        <h2>1. 파일 고르기</h2>
-        <p class="card-hint">변환할 PDF 하나를 고릅니다.</p>
+    <!-- 왼쪽 도구 줄 --------------------------------------------------------->
+    <nav class="rail" aria-label="도구 고르기">
+        <button type="button" class="rail-item is-active" id="rail-file"
+                aria-controls="tool-file" aria-selected="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 3v5h5" />
+            </svg>
+            <span>파일</span>
+        </button>
 
-        <div class="tabs" role="tablist">
-            <button type="button" class="tab is-active" id="tab-upload-button"
-                    role="tab" aria-selected="true" aria-controls="tab-upload" tabindex="0">
-                내 컴퓨터에서 올리기
-            </button>
-            <button type="button" class="tab" id="tab-storage-button"
-                    role="tab" aria-selected="false" aria-controls="tab-storage" tabindex="-1">
-                서버 보관함에서 고르기
-            </button>
+        <button type="button" class="rail-item" id="rail-ocr"
+                aria-controls="tool-ocr" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7V4h4M20 7V4h-4M4 17v3h4M20 17v3h-4" />
+                <path d="M8 12h8M8 9h8M8 15h5" />
+            </svg>
+            <span>글자 읽기</span>
+        </button>
+
+        <button type="button" class="rail-item" id="rail-fix"
+                aria-controls="tool-fix" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <path d="M21 4v5h-5" />
+            </svg>
+            <span>바로잡기</span>
+        </button>
+
+        <button type="button" class="rail-item" id="rail-export"
+                aria-controls="tool-export" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v12" />
+                <path d="M8 11l4 4 4-4" />
+                <path d="M5 19h14" />
+            </svg>
+            <span>내보내기</span>
+        </button>
+
+        <div class="rail-gap"></div>
+
+        <a class="rail-item rail-link" href="/gpu-test">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8h.01M11 12h1v4h1" />
+            </svg>
+            <span>진단</span>
+        </a>
+    </nav>
+
+    <!-- 쪽 목록 -------------------------------------------------------------->
+    <aside class="thumbs" id="thumbs" aria-label="쪽 목록">
+        <p class="thumbs-empty" id="thumbs-empty">파일을 고르면<br />쪽이 여기에 나옵니다.</p>
+        <div class="thumbs-list" id="thumbs-list"></div>
+    </aside>
+
+    <!-- 문서 보기 ------------------------------------------------------------>
+    <main class="stage">
+        <div class="stage-bar">
+            <div class="stage-nav">
+                <button type="button" class="icon-button" id="page-prev"
+                        aria-label="앞 쪽으로" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+                </button>
+                <span class="stage-page">
+                    <input type="number" id="page-input" value="1" min="1" aria-label="쪽 번호"
+                           disabled />
+                    <span id="page-total">/ 0</span>
+                </span>
+                <button type="button" class="icon-button" id="page-next"
+                        aria-label="다음 쪽으로" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+                </button>
+            </div>
+
+            <div class="stage-zoom">
+                <button type="button" class="icon-button" id="zoom-out"
+                        aria-label="축소" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+                </button>
+                <span class="stage-zoom-value" id="zoom-value">맞춤</span>
+                <button type="button" class="icon-button" id="zoom-in"
+                        aria-label="확대" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                </button>
+                <button type="button" class="button-sub" id="zoom-fit" disabled>쪽 맞춤</button>
+            </div>
         </div>
 
-        <div id="tab-upload" role="tabpanel" aria-labelledby="tab-upload-button">
+        <div class="stage-view" id="stage-view">
+            <!-- 파일을 고르기 전에 보이는 화면 -->
             <label class="dropzone" id="dropzone" tabindex="0" role="button"
                    aria-label="내 컴퓨터에서 PDF 파일 선택" aria-controls="file-input">
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="dropzone-icon">
+                    <path d="M12 16V4" />
+                    <path d="M8 8l4-4 4 4" />
+                    <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                </svg>
                 <strong>여기로 PDF를 끌어다 놓으세요</strong>
-                누르면 파일을 직접 고를 수도 있습니다
+                <span>누르면 파일을 직접 고를 수도 있습니다</span>
                 <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
             </label>
-        </div>
 
-        <div id="tab-storage" class="is-hidden" role="tabpanel"
-             aria-labelledby="tab-storage-button">
-            <p class="card-hint" id="storage-hint">보관함을 불러오는 중입니다.</p>
-            <div class="storage-list" id="storage-list"></div>
-            <div class="button-row">
-                <button type="button" class="button-sub" id="storage-refresh">목록 새로 고침</button>
+            <div class="paper is-hidden" id="paper">
+                <canvas id="page-canvas"></canvas>
             </div>
+
+            <p class="stage-note is-hidden" id="stage-note"></p>
         </div>
+    </main>
 
-        <div class="picked-file" id="picked-file"></div>
-    </section>
+    <!-- 오른쪽 설정 패널 ------------------------------------------------------>
+    <aside class="panel" aria-label="설정">
 
-    <!-- 2. 설정 -------------------------------------------------------------->
-    <section class="card">
-        <h2>2. 설정</h2>
-        <p class="card-hint">잘 모르겠다면 그대로 두셔도 됩니다.</p>
+        <!-- 파일 도구 -->
+        <section class="tool is-active" id="tool-file" aria-labelledby="rail-file">
+            <h2>파일 고르기</h2>
+            <p class="tool-hint">변환할 PDF 하나를 고릅니다.</p>
 
-        <div class="field">
-            <span class="field-title" id="processor-title">글자를 읽을 곳</span>
-            <p class="field-desc">PDF에서 글자를 찾는 계산을 어디에서 할지 고릅니다.</p>
+            <div class="tabs" role="tablist">
+                <button type="button" class="tab is-active" id="tab-upload-button"
+                        role="tab" aria-selected="true" aria-controls="tab-upload" tabindex="0">
+                    내 컴퓨터
+                </button>
+                <button type="button" class="tab" id="tab-storage-button"
+                        role="tab" aria-selected="false" aria-controls="tab-storage" tabindex="-1">
+                    서버 보관함
+                </button>
+            </div>
 
-            <div role="radiogroup" aria-labelledby="processor-title">
-                <label class="choice">
-                    <input type="radio" name="processor" id="processor-server"
-                           value="server" checked />
-                    <span class="choice-text">
-                        <strong>서버에서 읽기 (기본값)</strong>
-                        <span>지금까지 사용하던 안정적인 방식입니다.</span>
-                    </span>
-                </label>
+            <div id="tab-upload" role="tabpanel" aria-labelledby="tab-upload-button">
+                <p class="tool-hint">왼쪽 화면으로 PDF를 끌어다 놓거나 아래 단추를 누르세요.</p>
+                <button type="button" class="button-sub full" id="file-pick">파일 고르기</button>
+            </div>
 
-                <label class="choice is-disabled" id="processor-browser-choice">
-                    <input type="radio" name="processor" id="processor-browser"
-                           value="browser" aria-describedby="browser-processor-hint" disabled />
-                    <span class="choice-text">
-                        <strong>이 컴퓨터의 그래픽카드 (시험 기능)</strong>
-                        <span>
-                            처음 한 번은 약 60MB를 받습니다. 작업이 끝날 때까지 이 탭을 열어 두세요.
-                            글자를 읽는 계산만 이 컴퓨터가 맡고, 원본과 결과는 서버로 전달됩니다.
-                            현재는 ‘원본 그대로 두기’ 방식만 지원합니다.
+            <div id="tab-storage" class="is-hidden" role="tabpanel"
+                 aria-labelledby="tab-storage-button">
+                <p class="tool-hint" id="storage-hint">보관함을 불러오는 중입니다.</p>
+                <div class="storage-list" id="storage-list"></div>
+                <button type="button" class="button-sub full" id="storage-refresh">
+                    목록 새로 고침
+                </button>
+            </div>
+        </section>
+
+        <!-- 글자 읽기 도구 -->
+        <section class="tool" id="tool-ocr" aria-labelledby="rail-ocr" hidden>
+            <h2>글자 읽기</h2>
+            <p class="tool-hint">잘 모르겠다면 그대로 두셔도 됩니다.</p>
+
+            <div class="field">
+                <span class="field-title" id="processor-title">글자를 읽을 곳</span>
+                <div role="radiogroup" aria-labelledby="processor-title">
+                    <label class="choice">
+                        <input type="radio" name="processor" id="processor-server"
+                               value="server" checked />
+                        <span class="choice-text">
+                            <strong>서버에서 읽기</strong>
+                            <span>지금까지 쓰던 안정적인 방식입니다.</span>
                         </span>
+                    </label>
+
+                    <label class="choice is-disabled" id="processor-browser-choice">
+                        <input type="radio" name="processor" id="processor-browser"
+                               value="browser" aria-describedby="browser-processor-hint" disabled />
+                        <span class="choice-text">
+                            <strong>이 컴퓨터의 그래픽카드</strong>
+                            <span>처음 한 번은 약 60MB를 받습니다. 끝날 때까지 이 탭을 열어 두세요.</span>
+                        </span>
+                    </label>
+                </div>
+                <p class="notice notice-plain" id="browser-processor-hint" aria-live="polite">
+                    그래픽카드 사용 가능 여부를 확인하는 중입니다.
+                </p>
+            </div>
+
+            <div class="field">
+                <label for="dpi">읽어 들일 해상도</label>
+                <p class="field-desc" id="dpi-description">
+                    숫자가 클수록 작은 글씨까지 잘 읽지만 더 오래 걸립니다.
+                </p>
+                <select id="dpi">
+                    <option value="150">150 - 빠름 (글씨가 큰 문서)</option>
+                    <option value="200">200 - 보통</option>
+                    <option value="300" selected>300 - 권장 (기본값)</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="text-score">글자로 인정할 기준 점수</label>
+                <p class="field-desc">
+                    이 점수보다 자신 없게 읽은 글자는 버립니다. (0 ~ 1)
+                </p>
+                <input type="number" id="text-score" value="0.5" min="0" max="1" step="0.05" />
+            </div>
+
+            <div class="field">
+                <span class="field-title">변환 방식</span>
+
+                <label class="choice" id="mode-keep-choice">
+                    <input type="radio" name="mode" id="mode-keep" value="keep" checked />
+                    <span class="choice-text">
+                        <strong>원본 그대로 두기 (권장)</strong>
+                        <span>보이는 모습은 그대로 두고 눈에 안 보이는 글자만 얹습니다.
+                              화질이 전혀 나빠지지 않습니다.</span>
+                    </span>
+                </label>
+
+                <label class="choice" id="mode-rebuild-choice">
+                    <input type="radio" name="mode" id="mode-rebuild" value="rebuild" />
+                    <span class="choice-text">
+                        <strong>용량 줄이기</strong>
+                        <span>고른 해상도로 페이지를 다시 만듭니다. 원본이 아주 고화질일 때만
+                              용량이 줄어듭니다.</span>
                     </span>
                 </label>
             </div>
+        </section>
 
-            <p class="notice notice-plain processor-note" id="browser-processor-hint"
-               aria-live="polite">그래픽카드 사용 가능 여부를 확인하는 중입니다.</p>
-        </div>
-
-        <div class="field">
-            <label for="dpi">읽어 들일 해상도</label>
-            <p class="field-desc" id="dpi-description">
-                숫자가 클수록 작은 글씨까지 잘 읽지만 더 오래 걸립니다.
-            </p>
-            <select id="dpi">
-                <option value="150">150 - 빠름 (글씨가 큰 문서)</option>
-                <option value="200">200 - 보통</option>
-                <option value="300" selected>300 - 권장 (기본값)</option>
-            </select>
-        </div>
-
-        <div class="field">
-            <label for="text-score">글자로 인정할 기준 점수</label>
-            <p class="field-desc">
-                이 점수보다 자신 없게 읽은 글자는 버립니다.
-                낮추면 더 많이 담지만 틀린 글자가 섞일 수 있습니다. (0 ~ 1)
-            </p>
-            <input type="number" id="text-score" value="0.5" min="0" max="1" step="0.05" />
-        </div>
-
-        <div class="field">
-            <span class="field-title">변환 방식</span>
-            <p class="field-desc">결과 PDF를 어떻게 만들지 고릅니다.</p>
-
-            <label class="choice" id="mode-keep-choice">
-                <input type="radio" name="mode" id="mode-keep" value="keep" checked />
-                <span class="choice-text">
-                    <strong>원본 그대로 두기 (권장)</strong>
-                    <span>보이는 모습은 그대로 두고, 눈에 안 보이는 글자만 얹습니다.
-                          화질이 전혀 나빠지지 않습니다.</span>
-                </span>
-            </label>
-
-            <label class="choice" id="mode-rebuild-choice">
-                <input type="radio" name="mode" id="mode-rebuild" value="rebuild" />
-                <span class="choice-text">
-                    <strong>용량 줄이기</strong>
-                    <span>위에서 고른 해상도로 페이지를 다시 만듭니다.
-                          원본이 아주 고화질일 때 용량이 줄어듭니다.
-                          반대로 원본보다 높은 해상도를 고르면 오히려 커집니다.</span>
-                </span>
-            </label>
-        </div>
-
-        <div class="field">
-            <span class="field-title">비뚤어진 스캔본 바로잡기</span>
-            <p class="field-desc">스캐너에서 삐뚤게 들어온 문서를 변환하면서 바로 세웁니다.</p>
+        <!-- 바로잡기 도구 -->
+        <section class="tool" id="tool-fix" aria-labelledby="rail-fix" hidden>
+            <h2>비뚤어진 스캔본 바로잡기</h2>
+            <p class="tool-hint">삐뚤게 들어온 문서를 변환하면서 바로 세웁니다.</p>
 
             <label class="choice" id="auto-rotate-choice">
                 <input type="checkbox" id="auto-rotate" checked />
                 <span class="choice-text">
                     <strong>거꾸로·옆으로 된 문서 바로 세우기 (권장)</strong>
                     <span>첫 쪽을 네 방향으로 읽어 보고 가장 잘 읽히는 방향으로 돌립니다.
-                          돌리는 각도만 바꾸므로 화질이 전혀 나빠지지 않습니다.
-                          대신 확인하는 데 몇 초가 더 걸립니다.</span>
+                          돌리는 각도만 바꾸므로 화질이 전혀 나빠지지 않습니다.</span>
                 </span>
             </label>
 
@@ -154,28 +262,24 @@
                 <input type="checkbox" id="deskew" />
                 <span class="choice-text">
                     <strong>살짝 기운 것까지 펴기</strong>
-                    <span>1~3도쯤 비뚤어진 쪽을 똑바로 되돌립니다.
-                          <b>페이지를 다시 그려야 해서 화질이 조금 나빠지므로</b>
-                          ‘용량 줄이기’를 골랐을 때만 쓸 수 있습니다.
-                          스캐너에 기울기 보정(Deskew) 기능이 있다면 그쪽이 더 낫습니다.</span>
+                    <span>1~3도쯤 기운 쪽을 똑바로 되돌립니다.
+                          <b>페이지를 다시 그려야 해서 화질이 조금 나빠집니다.</b></span>
                 </span>
             </label>
 
-            <p class="notice notice-plain processor-note" id="correction-note"
-               aria-live="polite"></p>
-        </div>
+            <p class="notice notice-plain" id="correction-note" aria-live="polite"></p>
+        </section>
 
-        <div class="field">
-            <span class="field-title">읽은 글자를 파일로도 저장하기</span>
-            <p class="field-desc">
-                PDF와 함께, 읽어 낸 글자만 따로 담은 파일을 만듭니다. 고르지 않으면 만들지 않습니다.
-            </p>
+        <!-- 내보내기 도구 -->
+        <section class="tool" id="tool-export" aria-labelledby="rail-export" hidden>
+            <h2>읽은 글자를 파일로도 저장</h2>
+            <p class="tool-hint">고르지 않으면 만들지 않습니다.</p>
 
             <label class="choice">
                 <input type="checkbox" class="export-format" value="txt" />
                 <span class="choice-text">
                     <strong>txt — 글자만 담긴 파일</strong>
-                    <span>메모장에서 바로 열립니다. 어디서나 읽을 수 있는 가장 단순한 형식입니다.</span>
+                    <span>메모장에서 바로 열립니다.</span>
                 </span>
             </label>
 
@@ -183,7 +287,7 @@
                 <input type="checkbox" class="export-format" value="md" />
                 <span class="choice-text">
                     <strong>md — 쪽 구분이 있는 파일</strong>
-                    <span>쪽마다 제목이 붙습니다. 메모 앱이나 문서 도구로 옮길 때 좋습니다.</span>
+                    <span>쪽마다 제목이 붙습니다.</span>
                 </span>
             </label>
 
@@ -191,59 +295,53 @@
                 <input type="checkbox" class="export-format" value="docx" />
                 <span class="choice-text">
                     <strong>docx — 워드 문서</strong>
-                    <span>워드에서 바로 고칠 수 있습니다. 스캔본에는 서식이 없으므로
-                          글자만 순서대로 들어갑니다.</span>
+                    <span>스캔본에는 서식이 없어 글자만 순서대로 들어갑니다.</span>
                 </span>
             </label>
+        </section>
+
+        <!-- 어느 도구를 골라도 늘 보이는 아래쪽 -->
+        <div class="panel-foot">
+            <div class="notice notice-error is-hidden" id="error-box" role="alert"></div>
+            <div class="notice notice-warn is-hidden" id="text-layer-warning" role="alert"></div>
+
+            <div class="progress is-hidden" id="progress-card" aria-live="polite">
+                <div class="progress-head">
+                    <span class="progress-percent" id="progress-percent">0%</span>
+                    <span class="badge badge-running" id="progress-badge">실행 중</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <p class="progress-message" id="progress-message">준비하는 중입니다.</p>
+            </div>
+
+            <div class="result is-hidden" id="result-card">
+                <h3>변환 결과</h3>
+                <dl class="result-grid" id="result-grid"></dl>
+                <p class="tool-hint" id="result-hint"></p>
+                <div class="notice notice-warn is-hidden" id="export-error" role="alert"></div>
+                <div class="button-row">
+                    <button type="button" class="button-sub" id="download-button">
+                        PDF 내려받기
+                    </button>
+                    <span id="export-buttons" class="export-buttons"></span>
+                </div>
+            </div>
+
+            <p class="tool-hint" id="ready-hint">파일을 고르면 시작할 수 있습니다.</p>
+            <button type="button" class="button-main full" id="start-button" disabled>
+                변환 시작
+            </button>
+            <button type="button" class="button-sub full is-hidden" id="stop-button">중지</button>
+            <button type="button" class="button-sub full is-hidden" id="reset-button">
+                다른 파일 변환하기
+            </button>
         </div>
-    </section>
-
-    <!-- 3. 변환 -------------------------------------------------------------->
-    <section class="card">
-        <h2>3. 변환</h2>
-        <p class="card-hint" id="ready-hint">파일을 고르면 시작할 수 있습니다.</p>
-
-        <div class="button-row">
-            <button type="button" class="button-main" id="start-button" disabled>변환 시작</button>
-            <button type="button" class="button-sub is-hidden" id="stop-button">중지</button>
-            <span class="badge badge-waiting is-hidden" id="status-badge">대기</span>
-        </div>
-
-        <div class="notice notice-error is-hidden" id="error-box" role="alert"></div>
-    </section>
-
-    <!-- 4. 진행 상황 ---------------------------------------------------------->
-    <section class="card is-hidden" id="progress-card" aria-live="polite">
-        <h2>진행 상황</h2>
-        <div class="progress-head">
-            <span class="progress-percent" id="progress-percent">0%</span>
-            <span class="badge badge-running" id="progress-badge">실행 중</span>
-        </div>
-        <div class="progress-track">
-            <div class="progress-bar" id="progress-bar"></div>
-        </div>
-        <p class="progress-message" id="progress-message">준비하는 중입니다.</p>
-        <div class="notice notice-warn is-hidden" id="text-layer-warning" role="alert"></div>
-    </section>
-
-    <!-- 5. 결과 --------------------------------------------------------------->
-    <section class="card is-hidden" id="result-card">
-        <h2>변환 결과</h2>
-        <p class="card-hint" id="result-hint"></p>
-
-        <dl class="result-grid" id="result-grid"></dl>
-
-        <div class="notice notice-warn is-hidden" id="export-error" role="alert"></div>
-
-        <div class="button-row">
-            <button type="button" class="button-main" id="download-button">결과 파일 내려받기</button>
-            <span id="export-buttons"></span>
-            <button type="button" class="button-sub" id="reset-button">다른 파일 변환하기</button>
-        </div>
-    </section>
-
+    </aside>
 </div>
 
+<script type="module" src="/static/viewer.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

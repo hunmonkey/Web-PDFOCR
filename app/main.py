@@ -790,6 +790,33 @@ async def storage_files() -> dict:
     }
 
 
+@app.get("/api/storage/file")
+async def storage_file(relative: str = ""):
+    """보관함('원본' 폴더)의 PDF를 화면에서 열어 볼 수 있게 그대로 돌려준다.
+
+    내려받기가 아니라 화면 안에서 보여 주는 용도라 파일 이름을 붙이지 않는다.
+    넘어온 경로가 정말 그 폴더 안인지 반드시 확인한다. 확인하지 않으면 서버의
+    아무 파일이나 읽어 갈 수 있다.
+    """
+    try:
+        path = storage.resolve_inside(storage.SOURCE_DIR, relative)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    if not path.is_file() or path.suffix.lower() != ".pdf":
+        raise HTTPException(404, "보관함에서 그 PDF를 찾지 못했습니다.")
+
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 async def _copy_upload(upload: UploadFile, target: Path) -> None:
     """큰 업로드를 한꺼번에 메모리에 올리지 않고 조금씩 저장한다."""
     with target.open("wb") as output:

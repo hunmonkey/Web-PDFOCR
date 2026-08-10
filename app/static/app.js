@@ -10,7 +10,17 @@
     const el = {
         dropzone: document.getElementById("dropzone"),
         fileInput: document.getElementById("file-input"),
+        filePick: document.getElementById("file-pick"),
         pickedFile: document.getElementById("picked-file"),
+        stageView: document.getElementById("stage-view"),
+        railFile: document.getElementById("rail-file"),
+        railOcr: document.getElementById("rail-ocr"),
+        railFix: document.getElementById("rail-fix"),
+        railExport: document.getElementById("rail-export"),
+        toolFile: document.getElementById("tool-file"),
+        toolOcr: document.getElementById("tool-ocr"),
+        toolFix: document.getElementById("tool-fix"),
+        toolExport: document.getElementById("tool-export"),
         logoutButton: document.getElementById("logout-button"),
         tabUploadButton: document.getElementById("tab-upload-button"),
         tabStorageButton: document.getElementById("tab-storage-button"),
@@ -422,9 +432,15 @@
     // ── 고른 파일 표시 ────────────────────────────────────────────────────
     function markReady(label) {
         el.pickedFile.textContent = label;
-        el.pickedFile.classList.add("is-shown");
         el.startButton.disabled = false;
         el.readyHint.textContent = "이제 변환을 시작할 수 있습니다.";
+    }
+
+    // 고른 문서를 가운데 화면에 띄운다. 보기에 실패해도 변환은 할 수 있으므로
+    // 오류로 처리하지 않고 그대로 진행한다.
+    function preview(source) {
+        if (!window.PdfViewer) return;
+        window.PdfViewer.open(source).catch(() => {});
     }
 
     function pickFile(file) {
@@ -436,7 +452,8 @@
         clearError();
         pickedFile = file;
         pickedStored = null;   // 두 곳에서 동시에 고를 수 없다
-        markReady("올릴 파일: " + file.name + " (" + formatSize(file.size) + ")");
+        markReady(file.name + " · " + formatSize(file.size));
+        preview(file);
     }
 
     function pickStored(item, node) {
@@ -447,8 +464,35 @@
         el.storageList.querySelectorAll(".storage-item").forEach((row) => {
             row.classList.toggle("is-picked", row === node);
         });
-        markReady("보관함 파일: " + item.relative + " (" + formatSize(item.size) + ")");
+        markReady(item.relative + " · " + formatSize(item.size));
+        preview("/api/storage/file?relative=" + encodeURIComponent(item.relative));
     }
+
+    // ── 왼쪽 도구 줄 ──────────────────────────────────────────────────────
+    // 도구를 고르면 오른쪽 패널에 그 설정만 보여 준다. 설정을 모두 늘어놓으면
+    // 화면이 길어져서, 지금 하려는 일과 상관없는 것까지 지나쳐야 한다.
+    const RAIL = [
+        { button: el.railFile, tool: el.toolFile },
+        { button: el.railOcr, tool: el.toolOcr },
+        { button: el.railFix, tool: el.toolFix },
+        { button: el.railExport, tool: el.toolExport },
+    ];
+
+    function switchTool(picked) {
+        RAIL.forEach(({ button, tool }) => {
+            const isPicked = button === picked;
+            button.classList.toggle("is-active", isPicked);
+            button.setAttribute("aria-selected", String(isPicked));
+            tool.hidden = !isPicked;
+            tool.classList.toggle("is-active", isPicked);
+        });
+    }
+
+    RAIL.forEach(({ button }) => {
+        button.addEventListener("click", () => switchTool(button));
+    });
+
+    el.filePick.addEventListener("click", () => el.fileInput.click());
 
     // ── 탭 바꾸기 ─────────────────────────────────────────────────────────
     function switchTab(name) {
@@ -586,19 +630,23 @@
     });
     el.fileInput.addEventListener("change", () => pickFile(el.fileInput.files[0]));
 
+    // 끌어다 놓기는 문서 보는 칸 전체에서 받는다. 문서를 이미 열어 둔 뒤에도
+    // 다른 파일로 바꿀 수 있어야 하기 때문이다.
     ["dragenter", "dragover"].forEach((name) => {
-        el.dropzone.addEventListener(name, (event) => {
+        el.stageView.addEventListener(name, (event) => {
             event.preventDefault();
+            el.stageView.classList.add("is-over");
             el.dropzone.classList.add("is-over");
         });
     });
     ["dragleave", "drop"].forEach((name) => {
-        el.dropzone.addEventListener(name, (event) => {
+        el.stageView.addEventListener(name, (event) => {
             event.preventDefault();
+            el.stageView.classList.remove("is-over");
             el.dropzone.classList.remove("is-over");
         });
     });
-    el.dropzone.addEventListener("drop", (event) => {
+    el.stageView.addEventListener("drop", (event) => {
         pickFile(event.dataTransfer.files[0]);
     });
 
@@ -660,6 +708,7 @@
 
         clearError();
         hide(el.resultCard);
+        hide(el.resetButton);
         hide(el.textLayerWarning);
         hide(el.exportError);
         closeProgressConnection();
@@ -1020,6 +1069,14 @@
             "서버의 '" + result.saved_dir + "' 폴더에 " + result.saved_name +
             " 으로 저장했습니다." + savedText;
         show(el.resultCard);
+        show(el.resetButton);
+
+        // 만들어진 결과를 그 자리에서 바로 보여 준다. 내려받아 다른 프로그램으로
+        // 열어 보지 않아도 방향이 바로 섰는지, 글자가 얹혔는지 확인할 수 있다.
+        if (currentJobId) {
+            preview("/api/jobs/" + currentJobId + "/download");
+            el.pickedFile.textContent = result.saved_name + " (변환 결과)";
+        }
     }
 
     el.downloadButton.addEventListener("click", () => {
@@ -1042,16 +1099,18 @@
             row.classList.remove("is-picked");
         });
         el.pickedFile.textContent = "";
-        el.pickedFile.classList.remove("is-shown");
         el.startButton.disabled = true;
         el.readyHint.textContent = "파일을 고르면 시작할 수 있습니다.";
         hide(el.statusBadge);
         hide(el.stopButton);
+        hide(el.resetButton);
         hide(el.progressCard);
         hide(el.resultCard);
         hide(el.textLayerWarning);
         hide(el.exportError);
         clearError();
+        if (window.PdfViewer) window.PdfViewer.close().catch(() => {});
+        switchTool(el.railFile);
         el.dropzone.focus();
     });
 
